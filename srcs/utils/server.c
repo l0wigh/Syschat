@@ -65,10 +65,10 @@ void server_handle_nick(t_syschat *syschat, char **parsed, char *srv_message)
 	switch (SYSCHAT_PRINT_MODE)
 	{
 		case 3:
-			sprintf(srv_message, "%s: \e[0;31m%s\e[0m is now \e[0;32m%s\e[0m\n", syschat->channel, parsed[0], parsed[2]);
+			sprintf(srv_message, "\e[0;35m%s\e[0m: \e[0;31m%s\e[0m is now \e[0;32m%s\e[0m\n", syschat->channel, parsed[0], parsed[2]);
 			break;
 		default:
-			sprintf(srv_message, "[%s] \e[0;31m%s\e[0m is now \e[0;32m%s\e[0m\n", syschat->channel, parsed[0], parsed[2]);
+			sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;31m%s\e[0m is now \e[0;32m%s\e[0m\n", syschat->channel, parsed[0], parsed[2]);
 			break;
 	}
 }
