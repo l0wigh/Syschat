@@ -27,4 +27,13 @@ typedef struct s_syschat
 	int					running;
 } t_syschat;
 
+static int BF_SIZE = 512;
+static char SYSCHAT_QUIT[14] = "Syschat 0.1.0";
+
+static const int DEFAULT = 0;
+static const int SHELL = 1;
+static const int ARROW = 2;
+static const int SIMPLE = 3;
+static int SYSCHAT_PRINT_MODE = DEFAULT;
+
 #endif
