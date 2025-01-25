@@ -7,13 +7,13 @@
 static t_syschat syschat;
 static struct termios oldt, newt;
 
-// TODO: Fix the return key printing "^?"
+// TODO: Find a way to avoid "^?" to be shortly printed before printing the new buffer
+// TODO: Find a way to get a properly formated channel name at startup
 
 void syschat_load_config(char **argv)
 {
 	syschat.hostname = strdup(argv[1]);
 	syschat.nickname = strdup(argv[2]);
-	syschat.channel = strdup(argv[3]);
 }
 
 void syschat_prepare_screen()
@@ -37,16 +37,28 @@ void syschat_say_hello()
 	sprintf(message, "USER %s %s %s %s\r\n", syschat.nickname, syschat.nickname, syschat.nickname, syschat.nickname);
 	send(syschat.net_socket, message, strlen(message), MSG_DONTWAIT);
 
-	bzero(message, BF_SIZE);
-	sprintf(message, "JOIN #%s\r\n", syschat.channel);
-	send(syschat.net_socket, message, strlen(message), MSG_DONTWAIT);
+	// Nothing for now....
+	/* if (strcmp(syschat.channel, "nothing") == 0) */
+	/* 	return; */
+	/* bzero(message, BF_SIZE); */
+	/* sprintf(message, "JOIN #%s\r\n", syschat.channel); */
+	/* send(syschat.net_socket, message, strlen(message), MSG_DONTWAIT); */
 }
 
 void syschat_handle_input(char *stdin_buffer, char *buffer)
 {
 	char message[BF_SIZE];
+	char *mod_channel;
 
 	bzero(message, BF_SIZE);
+	if (buffer[0] == 127)
+	{
+		stdin_buffer[strlen(stdin_buffer) - 1] = '\0';
+		write(1, "\033[2K\r", 5);
+		write(1, stdin_buffer, strlen(stdin_buffer));
+		fflush(stdout);
+		return ;
+	}
 	strcat(stdin_buffer, buffer);
 	if (buffer[0] == '\n')
 	{
@@ -54,40 +66,41 @@ void syschat_handle_input(char *stdin_buffer, char *buffer)
 			commands_execute(&syschat, stdin_buffer);
 		else
 		{
-			sprintf(message, "PRIVMSG #%s :%s\r\n", syschat.channel, stdin_buffer);
+			sprintf(message, "PRIVMSG %s :%s\r\n", syschat.channel, stdin_buffer);
 			send(syschat.net_socket, message, strlen(message), MSG_WAITFORONE);
-		}
-		switch (SYSCHAT_PRINT_MODE)
-		{
-			case 1:
-				printf("\033M[%s@%s]$ %s", syschat.nickname, syschat.channel, stdin_buffer);
-				break;
-			case 2:
-				printf("\033M[#%s] %s -> %s", syschat.channel, syschat.nickname, stdin_buffer);
-				break;
-			case 3:
-				printf("\033M%s: %s> ", syschat.nickname, stdin_buffer);
-				break;
-			default:
-				printf("\033M[#%s] <%s>: %s", syschat.channel, syschat.nickname, stdin_buffer);
-				break;
+			switch (SYSCHAT_PRINT_MODE)
+			{
+				case 1:
+					mod_channel = (char *) calloc(strlen(syschat.channel), sizeof(char));
+					memmove(mod_channel, syschat.channel+1, strlen(syschat.channel));
+					printf("\033M[\e[0;33m%s\e[0m@\e[0;35m%s\e[0m]$ \e[0;34m%s\e[0m", syschat.nickname, mod_channel, stdin_buffer);
+					free(mod_channel);
+					break;
+				case 2:
+					printf("\033M[\e[0;35m#%s\e[0m] \e[0;33m%s\e[0m -> \e[0;34m%s\e[0m", syschat.channel, syschat.nickname, stdin_buffer);
+					break;
+				case 3:
+					printf("\033M\e[0;33m%s\e[0m: \e[0;34m%s\e[0m", syschat.nickname, stdin_buffer);
+					break;
+				default:
+					printf("\033M[\e[0;35m#%s\e[0m] <\e[0;33m%s\e[0m>: \e[0;34m%s\e[0m", syschat.channel, syschat.nickname, stdin_buffer);
+					break;
+			}
 		}
 		bzero(stdin_buffer, BF_SIZE);
 	}
+	fflush(stdout);
 }
 
 void syschat_handle_message(char *stdin_buffer, char *buffer)
 {
 	server_handle_message(&syschat, buffer);
-	printf("\r%s", buffer);
-	fflush(stdout);
+	printf("\r%s\e[0m", buffer);
 	if (strlen(stdin_buffer) > 1)
 	{
-		printf("> %s", stdin_buffer);
+		printf("%s", stdin_buffer);
 		stdin_buffer[strlen(stdin_buffer)] = '\0';
 	}
-	else
-		printf("> ");
 	fflush(stdout);
 }
 
@@ -96,11 +109,10 @@ void syschat_loop()
 	char buffer[BF_SIZE];
 	char stdin_buffer[BF_SIZE];
 	struct epoll_event evls[64];
+	int did_say_hello = 0;
 
 	syschat.running = 1145;
 	bzero(stdin_buffer, BF_SIZE);
-	syschat_say_hello();
-	printf("> ");
 	while (syschat.running)
 	{
 		int num_evls = epoll_wait(syschat.epoll_fd, (struct epoll_event *)&evls, 64, 500);
@@ -115,6 +127,11 @@ void syschat_loop()
 			}
 			else
 			{
+				if (!did_say_hello)
+				{
+					syschat_say_hello();
+					did_say_hello = 1;
+				}
 				if (recv(syschat.net_socket, buffer, BF_SIZE, 0) <= 0)
 				{
 					syschat.running = 0;
@@ -128,7 +145,7 @@ void syschat_loop()
 
 int main(int argc, char **argv)
 {
-	if (argc != 4)
+	if (argc < 3)
 		error_exit(NULL, 1);
 
 	syschat_load_config(argv);

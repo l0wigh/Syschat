@@ -13,7 +13,7 @@ void error_print(int err)
 	switch (err)
 	{
 		case 1:
-			printf("you need to give <hostname> <nickname> <channel>.");
+			printf("you need to give <hostname> <nickname> <channel (optionnal)>.");
 			break;
 		case 2:
 			printf("can't get the size of your terminal.");
@@ -33,6 +33,9 @@ void error_print(int err)
 		case 7:
 			printf("can't connect to server.");
 			break;
+		case 8:
+			printf("channel need to be prefixed with '#'.");
+			break;
 		default:
 			printf("unknown error.");
 	}
@@ -46,7 +49,10 @@ void error_cleaning(t_syschat *syschat)
 
 	if (syschat->net_socket)
 		close(syschat->net_socket);
-	free(syschat->hostname);
-	free(syschat->nickname);
-	free(syschat->channel);
+	if (syschat->hostname)
+		free(syschat->hostname);
+	if (syschat->nickname)
+		free(syschat->nickname);
+	if (syschat->channel)
+		free(syschat->channel);
 }
