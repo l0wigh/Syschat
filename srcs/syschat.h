@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <sys/epoll.h>
 
 typedef struct s_syschat
 {
@@ -21,6 +22,9 @@ typedef struct s_syschat
 	int					net_socket;
 	struct sockaddr_in	v4_socket;
 	struct sockaddr_in6 v6_socket;
+	int					epoll_fd;
+	struct epoll_event	epoll_event;
+	int					running;
 } t_syschat;
 
 #endif

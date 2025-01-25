@@ -32,6 +32,7 @@ void network_connect_server(t_syschat *syschat)
 			error_exit(syschat, 7);
 	}
 
+	network_prepare_epoll(syschat);
 	printf("Connected to %s as %s\n", syschat->hostname, syschat->nickname);
 }
 
@@ -57,4 +58,15 @@ int network_get_ip(t_syschat *syschat, char *ip)
 	inet_ntop(p->ai_family, addr, ip, INET6_ADDRSTRLEN);
 
 	return 0;
+}
+
+void network_prepare_epoll(t_syschat *syschat)
+{
+	syschat->epoll_fd = epoll_create1(0);
+	syschat->epoll_event.events = EPOLLIN;
+	syschat->epoll_event.data.fd = syschat->net_socket;
+	epoll_ctl(syschat->epoll_fd, EPOLL_CTL_ADD, syschat->net_socket, &syschat->epoll_event);
+
+	syschat->epoll_event.data.fd = STDIN_FILENO;
+	epoll_ctl(syschat->epoll_fd, EPOLL_CTL_ADD, STDIN_FILENO, &syschat->epoll_event);
 }

@@ -16,7 +16,7 @@ PROJECT_H	= srcs/
 OBJS		= $(SRCS:.c=.o)
 OBJECTS_PREFIXED = $(addprefix $(OBJS_DIR), $(OBJS))
 CC			= gcc
-CC_FLAGS	= -Wall -Werror -Wextra -O2
+CC_FLAGS	= -Wall -Werror -Wextra -Wno-unused-result -O2
 # CC_FLAGS	= -Wall -Werror -Wextra -g3
 LIBS		=
 

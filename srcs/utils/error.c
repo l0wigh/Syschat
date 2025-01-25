@@ -44,6 +44,8 @@ void error_cleaning(t_syschat *syschat)
 	if (!syschat)
 		return;
 
+	if (syschat->net_socket)
+		close(syschat->net_socket);
 	free(syschat->hostname);
 	free(syschat->nickname);
 	free(syschat->channel);
