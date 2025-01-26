@@ -7,6 +7,7 @@
 static t_syschat syschat;
 static struct termios oldt, newt;
 
+// TODO: Investigate a crash with (big ?) /msg command. I guess it's the parsing....
 // TODO: Add kick command support
 // TODO: Use write instead of printf when it's possible
 // TODO: Find a way to avoid "^?" to be shortly printed before printing the new buffer
@@ -118,7 +119,7 @@ void syschat_handle_input(char *stdin_buffer, char *buffer)
 void syschat_handle_message(char *stdin_buffer, char *buffer)
 {
 	server_handle_message(&syschat, buffer);
-	printf("\r%s\e[0m", buffer);
+	printf("\r\033[2K%s\e[0m", buffer);
 	if (strlen(stdin_buffer) > 1)
 	{
 		printf("%s", stdin_buffer);

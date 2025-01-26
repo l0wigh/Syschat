@@ -4,7 +4,7 @@ Syschat is an IRC client made only with syscall and kernel functions.
 
 ## How it works ?
 
-- ioctl and fnctl to change stdin mode to non-canonical
+- termios and fnctl to change stdin mode to non-canonical
 - inet to manage connection
 - epoll to manage network and stdin events
 - write and printf for printing (obviously)
