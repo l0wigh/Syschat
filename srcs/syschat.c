@@ -27,7 +27,6 @@ void syschat_load_config(char **argv)
 			strcat(tmp, argv[3]);
 			syschat.channel = strdup(tmp);
 			free(tmp);
-			printf("%s", syschat.channel);
 		}
 	}
 	else
