@@ -1,4 +1,4 @@
-# Syschat IRC Client
+# Syschat 0.2.0 IRC Client
 
 Syschat is an IRC client made only with syscall and kernel functions.
 
