@@ -1,5 +1,4 @@
 #include "commands.h"
-#include <assert.h>
 
 void commands_handle_exit(t_syschat *syschat)
 {
@@ -22,10 +21,21 @@ void commands_handle_join(t_syschat *syschat, char **parsed)
 	char message[BF_SIZE];
 
 	bzero(message, BF_SIZE);
-	if (syschat->channel)
+	if (strcmp(syschat->channel, "NIAC") != 0)
 	{
 		sprintf(message, "PART %s\r\n", syschat->channel);
 		send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+	}
+
+	if (parsed[1][0] != '#')
+	{
+		char *tmp = (char *) calloc(BF_SIZE, sizeof(char));
+
+		tmp[0] = '#';
+		strcat(tmp, parsed[1]);
+		free(parsed[1]);
+		parsed[1] = strdup(tmp);
+		free(tmp);
 	}
 
 	bzero(message, BF_SIZE);
@@ -88,6 +98,8 @@ void commands_execute(t_syschat *syschat, char *command)
 	else if (strcmp(parsed[0], "msg") == 0)
 		commands_handle_msg(syschat, command);
 
+	for (int i = 0; i < 15; i++)
+		free(parsed[i]);
 	free(parsed);
 }
 
@@ -99,7 +111,7 @@ char **commands_parse(char *command)
 	int ch = 0;
 
 	res = (char **) calloc(16, sizeof(char *));
-	for (int i = 0; i != 15; i++)
+	for (int i = 0; i <= 15; i++)
 		res[i] = (char *) calloc(BF_SIZE, sizeof(char));
 
 	while (command[counter] != '\n')
@@ -110,7 +122,8 @@ char **commands_parse(char *command)
 			ch = -1;
 		}
 		else
-			res[elem][ch] = command[counter];
+			if (ch != 512)
+				res[elem][ch] = command[counter];
 		counter++;
 		ch++;
 	}

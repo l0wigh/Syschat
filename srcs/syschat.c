@@ -7,13 +7,31 @@
 static t_syschat syschat;
 static struct termios oldt, newt;
 
+// TODO: Add kick command support
+// TODO: Use write instead of printf when it's possible
 // TODO: Find a way to avoid "^?" to be shortly printed before printing the new buffer
-// TODO: Find a way to get a properly formated channel name at startup
+//         - This only happens on alacritty for now. going for low priority on this one
 
 void syschat_load_config(char **argv)
 {
 	syschat.hostname = strdup(argv[1]);
 	syschat.nickname = strdup(argv[2]);
+	if (argv[3])
+	{
+		if (argv[3][0] == '#')
+			syschat.channel = strdup(argv[3]);
+		else
+		{
+			char *tmp = (char *) calloc(BF_SIZE, sizeof(char));
+			tmp[0] = '#';
+			strcat(tmp, argv[3]);
+			syschat.channel = strdup(tmp);
+			free(tmp);
+			printf("%s", syschat.channel);
+		}
+	}
+	else
+		syschat.channel = strdup("NIAC");
 }
 
 void syschat_prepare_screen()
@@ -37,12 +55,11 @@ void syschat_say_hello()
 	sprintf(message, "USER %s %s %s %s\r\n", syschat.nickname, syschat.nickname, syschat.nickname, syschat.nickname);
 	send(syschat.net_socket, message, strlen(message), MSG_DONTWAIT);
 
-	// Nothing for now....
-	/* if (strcmp(syschat.channel, "nothing") == 0) */
-	/* 	return; */
-	/* bzero(message, BF_SIZE); */
-	/* sprintf(message, "JOIN #%s\r\n", syschat.channel); */
-	/* send(syschat.net_socket, message, strlen(message), MSG_DONTWAIT); */
+	if (strcmp(syschat.channel, "NIAC") == 0)
+		return;
+	bzero(message, BF_SIZE);
+	sprintf(message, "JOIN %s\r\n", syschat.channel);
+	send(syschat.net_socket, message, strlen(message), MSG_DONTWAIT);
 }
 
 void syschat_handle_input(char *stdin_buffer, char *buffer)
@@ -66,6 +83,13 @@ void syschat_handle_input(char *stdin_buffer, char *buffer)
 			commands_execute(&syschat, stdin_buffer);
 		else
 		{
+			if (strcmp(syschat.channel, "NIAC") == 0)
+			{
+				printf("\033M\e[0;31mYou are not in a channel ! Use /join <channel>\e[0m\n");
+				bzero(stdin_buffer, BF_SIZE);
+				fflush(stdout);
+				return ;
+			}
 			sprintf(message, "PRIVMSG %s :%s\r\n", syschat.channel, stdin_buffer);
 			send(syschat.net_socket, message, strlen(message), MSG_WAITFORONE);
 			switch (SYSCHAT_PRINT_MODE)
@@ -73,17 +97,17 @@ void syschat_handle_input(char *stdin_buffer, char *buffer)
 				case 1:
 					mod_channel = (char *) calloc(strlen(syschat.channel), sizeof(char));
 					memmove(mod_channel, syschat.channel+1, strlen(syschat.channel));
-					printf("\033M[\e[0;33m%s\e[0m@\e[0;35m%s\e[0m]$ \e[0;34m%s\e[0m", syschat.nickname, mod_channel, stdin_buffer);
+					printf("\033M[\e[0;33m%s\e[0m@\e[0;35m%s\e[0m]$ \e[0;33m%s\e[0m", syschat.nickname, mod_channel, stdin_buffer);
 					free(mod_channel);
 					break;
 				case 2:
-					printf("\033M[\e[0;35m#%s\e[0m] \e[0;33m%s\e[0m -> \e[0;34m%s\e[0m", syschat.channel, syschat.nickname, stdin_buffer);
+					printf("\033M[\e[0;35m%s\e[0m] \e[0;33m%s\e[0m -> \e[0;33m%s\e[0m", syschat.channel, syschat.nickname, stdin_buffer);
 					break;
 				case 3:
-					printf("\033M\e[0;33m%s\e[0m: \e[0;34m%s\e[0m", syschat.nickname, stdin_buffer);
+					printf("\033M\e[0;33m%s\e[0m: \e[0;33m%s\e[0m", syschat.nickname, stdin_buffer);
 					break;
 				default:
-					printf("\033M[\e[0;35m#%s\e[0m] <\e[0;33m%s\e[0m>: \e[0;34m%s\e[0m", syschat.channel, syschat.nickname, stdin_buffer);
+					printf("\033M[\e[0;35m%s\e[0m] <\e[0;33m%s\e[0m>: \e[0;33m%s\e[0m", syschat.channel, syschat.nickname, stdin_buffer);
 					break;
 			}
 		}
@@ -157,6 +181,7 @@ int main(int argc, char **argv)
 	tcsetattr(STDIN_FILENO, TCSANOW, &newt);
 	fcntl(STDIN_FILENO, F_SETFL, fcntl(0, F_GETFL) | O_NONBLOCK);
 
+	printf("[%s]\n", SYSCHAT_QUIT);
 	network_connect_server(&syschat);
 	syschat_loop();
 
