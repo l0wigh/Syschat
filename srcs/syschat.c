@@ -7,7 +7,6 @@
 static t_syschat syschat;
 static struct termios oldt, newt;
 
-// TODO: Find what the f**k is the privmsg commands doing
 // TODO: Add the possibility to manage multiple channel. for this i'll need to avoid using predefined channel name
 // TODO: Find a way to cut the stdin input to simulate X axis scrolling (ioctl ?)
 // TODO: Use write instead of printf when it's possible

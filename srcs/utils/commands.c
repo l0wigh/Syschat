@@ -93,7 +93,7 @@ void commands_execute(t_syschat *syschat, char *command)
 	else if (strcmp(parsed[0], "join") == 0)
 		commands_handle_join(syschat, parsed);
 	else if (strcmp(parsed[0], "privmsg") == 0)
-		commands_handle_join(syschat, parsed);
+		commands_handle_privmsg(syschat, parsed);
 	else if (strcmp(parsed[0], "nick") == 0)
 		commands_handle_nick(syschat, parsed);
 	else if (strcmp(parsed[0], "clear") == 0)
@@ -101,7 +101,7 @@ void commands_execute(t_syschat *syschat, char *command)
 	else if (strcmp(parsed[0], "msg") == 0)
 		commands_handle_msg(syschat, command);
 
-	for (int i = 0; i < 15; i++)
+	for (int i = 0; i != 16; i++)
 		free(parsed[i]);
 	free(parsed);
 }
@@ -115,7 +115,7 @@ char **commands_parse(char *command)
 	int still_skip = 1;
 
 	res = (char **) calloc(16, sizeof(char *));
-	for (int i = 0; i <= 15; i++)
+	for (int i = 0; i != 16; i++)
 		res[i] = (char *) calloc(BF_SIZE, sizeof(char));
 
 	while (command[counter] != '\n')
@@ -128,7 +128,10 @@ char **commands_parse(char *command)
 			ch = -1;
 		}
 		else if (command[counter] == ':' && still_skip)
+		{
 			still_skip = 0;
+			ch = -1;
+		}
 		else
 			res[elem][ch] = command[counter];
 		counter++;

@@ -131,7 +131,7 @@ void server_handle_message(t_syschat *syschat, char *srv_message)
 		if (SYSCHAT_QUIET)
 			bzero(srv_message, BF_SIZE);
 
-	for (int i = 0; i < 16; i++)
+	for (int i = 0; i != 16; i++)
 		free(parsed[i]);
 	free(parsed);
 }
@@ -146,7 +146,7 @@ char **server_parse_message(char *srv_message)
 	int still_skip = 1;
 
 	res = (char **) calloc(16, sizeof(char *));
-	for (int i = 0; i < 16; i++)
+	for (int i = 0; i != 16; i++)
 		res[i] = (char *) calloc(BF_SIZE + 1, sizeof(char));
 
 	if (srv_message[0] == ':')
