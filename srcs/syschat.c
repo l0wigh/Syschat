@@ -9,10 +9,12 @@ static struct termios oldt, newt;
 
 // TODO: Add the possibility to manage multiple channel. for this i'll need to avoid using predefined channel name
 //       - Add a visual way to see what channel/privmsg is locked
+// TODO: manage MODE server message
 // TODO: Split the QUIT and PART server message since they doesn't works the same
 // TODO: Add /PART command
 // TODO: Find a way to cut the stdin input to simulate X axis scrolling (ioctl ?)
 // TODO: Implement a char by char recv reading to go one line ("\r\n") at a time
+// TODO: Add CTCP stuff (just for fun)
 // TODO: Use write instead of printf when it's possible
 // TODO: Find a way to avoid "^?" to be shortly printed before printing the new buffer
 //         - This only happens on alacritty for now. going for low priority on this one
