@@ -67,6 +67,13 @@ void commands_handle_nick(t_syschat *syschat, char **parsed)
 	syschat->nickname = strdup(parsed[1]);
 }
 
+void commands_handle_clear()
+{
+	for (int i = 0; i != 1000; i++)
+		if (write(1, "\n", 1) == -1)
+			break;
+}
+
 void commands_handle_msg(t_syschat *syschat, char *command)
 {
 	while (command[0] != ' ')
@@ -90,11 +97,7 @@ void commands_execute(t_syschat *syschat, char *command)
 	else if (strcmp(parsed[0], "nick") == 0)
 		commands_handle_nick(syschat, parsed);
 	else if (strcmp(parsed[0], "clear") == 0)
-	{
-		for (int i = 0; i != 1000; i++)
-			if (write(1, "\n", 1) == -1)
-				break;
-	}
+		commands_handle_clear();
 	else if (strcmp(parsed[0], "msg") == 0)
 		commands_handle_msg(syschat, command);
 
@@ -109,6 +112,7 @@ char **commands_parse(char *command)
 	int counter = 1;
 	int elem = 0;
 	int ch = 0;
+	int still_skip = 1;
 
 	res = (char **) calloc(16, sizeof(char *));
 	for (int i = 0; i <= 15; i++)
@@ -116,14 +120,17 @@ char **commands_parse(char *command)
 
 	while (command[counter] != '\n')
 	{
-		if (command[counter] == ' ')
+		if (elem > 15 || ch > 512)
+			break;
+		if (command[counter] == ' ' && still_skip)
 		{
 			elem++;
 			ch = -1;
 		}
+		else if (command[counter] == ':' && still_skip)
+			still_skip = 0;
 		else
-			if (ch != 512)
-				res[elem][ch] = command[counter];
+			res[elem][ch] = command[counter];
 		counter++;
 		ch++;
 	}
