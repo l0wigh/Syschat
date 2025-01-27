@@ -8,16 +8,26 @@ Syschat is an IRC client made only with syscall and libc + kernel functions.
 - inet to manage connection
 - epoll to manage network and stdin events
 - write and printf for printing (obviously)
-- ansi code to move cursor around
+- ansi codes
 
 ## What it can do ?
 
 - join a channel and talk in it
+- talk in private message
 - send message to server (list, nickserv, ...)
 - handle these messages
     - nick
     - part
     - ping
+    - kick
+
+## How to use
+
+Join a channel and start to talk. If you want to send pm, use /privmsg <username> :<your text>.
+
+If you join multiple channel, you'll see greyed text from them. It means you aren't locked to them. Use /lock <channel> to lock to another channel.
+
+Locking a channel means that your messages will be sent to it and messages from it will be colored.
 
 ## But why ?
 
