@@ -21,7 +21,7 @@ Syschat is an IRC client made only with syscall and kernel functions.
 
 ## But why ?
 
-It was at first a pet project, but it works very good for my daily usage of irc and is faster and use less ressources (1.0mb instead of 10.0mb from irssi).
+It was at first a pet project, but it works very good for my daily usage of irc and is faster and use almost no ressources.
 
 ## Compile flags ?
 
