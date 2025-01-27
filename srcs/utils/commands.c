@@ -21,11 +21,6 @@ void commands_handle_join(t_syschat *syschat, char **parsed)
 	char message[BF_SIZE];
 
 	bzero(message, BF_SIZE);
-	if (strcmp(syschat->channel, "NIAC") != 0)
-	{
-		sprintf(message, "PART %s\r\n", syschat->channel);
-		send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
-	}
 
 	if (parsed[1][0] != '#')
 	{
@@ -42,7 +37,8 @@ void commands_handle_join(t_syschat *syschat, char **parsed)
 	sprintf(message, "JOIN %s\r\n", parsed[1]);
 	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
 
-	free(syschat->channel);
+	if (syschat->channel)
+		free(syschat->channel);
 	syschat->channel = strdup(parsed[1]);
 }
 
@@ -83,6 +79,13 @@ void commands_handle_msg(t_syschat *syschat, char *command)
 	send(syschat->net_socket, command, strlen(command), MSG_DONTWAIT);
 }
 
+void commands_handle_lock(t_syschat *syschat, char **parsed)
+{
+	if (syschat->channel)
+		free(syschat->channel);
+	syschat->channel = strdup(parsed[1]);
+}
+
 void commands_execute(t_syschat *syschat, char *command)
 {
 	char **parsed;
@@ -100,6 +103,8 @@ void commands_execute(t_syschat *syschat, char *command)
 		commands_handle_clear();
 	else if (strcmp(parsed[0], "msg") == 0)
 		commands_handle_msg(syschat, command);
+	else if (strcmp(parsed[0], "lock") == 0)
+		commands_handle_lock(syschat, parsed);
 
 	for (int i = 0; i != 16; i++)
 		free(parsed[i]);

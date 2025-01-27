@@ -8,7 +8,11 @@ static t_syschat syschat;
 static struct termios oldt, newt;
 
 // TODO: Add the possibility to manage multiple channel. for this i'll need to avoid using predefined channel name
+//       - Add a visual way to see what channel/privmsg is locked
+// TODO: Split the QUIT and PART server message since they doesn't works the same
+// TODO: Add /PART command
 // TODO: Find a way to cut the stdin input to simulate X axis scrolling (ioctl ?)
+// TODO: Implement a char by char recv reading to go one line ("\r\n") at a time
 // TODO: Use write instead of printf when it's possible
 // TODO: Find a way to avoid "^?" to be shortly printed before printing the new buffer
 //         - This only happens on alacritty for now. going for low priority on this one
@@ -17,21 +21,6 @@ void syschat_load_config(char **argv)
 {
 	syschat.hostname = strdup(argv[1]);
 	syschat.nickname = strdup(argv[2]);
-	if (argv[3])
-	{
-		if (argv[3][0] == '#')
-			syschat.channel = strdup(argv[3]);
-		else
-		{
-			char *tmp = (char *) calloc(BF_SIZE, sizeof(char));
-			tmp[0] = '#';
-			strcat(tmp, argv[3]);
-			syschat.channel = strdup(tmp);
-			free(tmp);
-		}
-	}
-	else
-		syschat.channel = strdup("NIAC");
 }
 
 void syschat_prepare_screen()
@@ -53,12 +42,6 @@ void syschat_say_hello()
 
 	bzero(message, BF_SIZE);
 	sprintf(message, "USER %s %s %s %s\r\n", syschat.nickname, syschat.nickname, syschat.nickname, syschat.nickname);
-	send(syschat.net_socket, message, strlen(message), MSG_DONTWAIT);
-
-	if (strcmp(syschat.channel, "NIAC") == 0)
-		return;
-	bzero(message, BF_SIZE);
-	sprintf(message, "JOIN %s\r\n", syschat.channel);
 	send(syschat.net_socket, message, strlen(message), MSG_DONTWAIT);
 }
 
@@ -83,33 +66,19 @@ void syschat_handle_input(char *stdin_buffer, char *buffer)
 			commands_execute(&syschat, stdin_buffer);
 		else
 		{
-			if (strcmp(syschat.channel, "NIAC") == 0)
+			if (!syschat.channel)
 			{
-				printf("\033M\e[0;31mYou are not in a channel ! Use /join <channel>\e[0m\n");
+				printf("\033M\r\033[2K\e[0;31mYou are not in a channel ! Use /join <channel>\e[0m\n");
 				bzero(stdin_buffer, BF_SIZE);
 				fflush(stdout);
 				return ;
 			}
 			sprintf(message, "PRIVMSG %s :%s\r\n", syschat.channel, stdin_buffer);
 			send(syschat.net_socket, message, strlen(message), MSG_WAITFORONE);
-			switch (SYSCHAT_PRINT_MODE)
-			{
-				case 1:
-					mod_channel = (char *) calloc(strlen(syschat.channel), sizeof(char));
-					memmove(mod_channel, syschat.channel+1, strlen(syschat.channel));
-					printf("\033M[\e[0;33m%s\e[0m@\e[0;35m%s\e[0m]$ \e[0;33m%s\e[0m", syschat.nickname, mod_channel, stdin_buffer);
-					free(mod_channel);
-					break;
-				case 2:
-					printf("\033M[\e[0;35m%s\e[0m] \e[0;33m%s\e[0m -> \e[0;33m%s\e[0m", syschat.channel, syschat.nickname, stdin_buffer);
-					break;
-				case 3:
-					printf("\033M\e[0;33m%s\e[0m: \e[0;33m%s\e[0m", syschat.nickname, stdin_buffer);
-					break;
-				default:
-					printf("\033M[\e[0;35m%s\e[0m] <\e[0;33m%s\e[0m>: \e[0;33m%s\e[0m", syschat.channel, syschat.nickname, stdin_buffer);
-					break;
-			}
+			if (syschat.channel[0] == '#')
+				printf("\033M[\e[0;35m%s\e[0m] <\e[0;33m%s\e[0m>: \e[0;33m%s\e[0m", syschat.channel, syschat.nickname, stdin_buffer);
+			else
+				printf("\033M<\e[0;33m%s\e[0m> -> <\e[0;34m%s\e[0m>: \e[0;33m%s\e[0m", syschat.nickname, syschat.channel, stdin_buffer);
 		}
 		bzero(stdin_buffer, BF_SIZE);
 	}
@@ -169,7 +138,7 @@ void syschat_loop()
 
 int main(int argc, char **argv)
 {
-	if (argc < 3)
+	if (argc < 2)
 		error_exit(NULL, 1);
 
 	syschat_load_config(argv);

@@ -13,7 +13,7 @@ void error_print(int err)
 	switch (err)
 	{
 		case 1:
-			printf("you need to give <hostname> <nickname> <channel (optionnal)>.");
+			printf("you need to give <hostname> <nickname> arguments.");
 			break;
 		case 2:
 			printf("can't get the size of your terminal.");

@@ -1,10 +1,10 @@
 #include "server.h"
-
-static const int MANAGED_LEN = 7;
-static const char *MANAGED_COMMANDS[7] = {
+static const int MANAGED_LEN = 8;
+static const char *MANAGED_COMMANDS[8] = {
 	"PING",
 	"JOIN",
 	"QUIT",
+	"PART",
 	"PRIVMSG",
 	"NICK",
 	"KICK",
@@ -22,79 +22,71 @@ void server_handle_ping(t_syschat *syschat, char **parsed, char *srv_message)
 
 void server_handle_join(t_syschat *syschat, char **parsed, char *srv_message)
 {
+	int notlocked;
+
 	bzero(srv_message, BF_SIZE);
-	switch (SYSCHAT_PRINT_MODE)
-	{
-		case 3:
-			sprintf(srv_message, "\e[0;35m%s\e[0m: \e[0;32m%s\e[0m just \e[0;32mentered\e[0m\n", syschat->channel, parsed[0]);
-			break;
-		default:
-			sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m just \e[0;32mentered\e[0m\n", syschat->channel, parsed[0]);
-			break;
-	}
+	*strchr(parsed[2], '\r') = '\0';
+	notlocked = strcmp(parsed[2], syschat->channel);
+	if (!notlocked)
+		sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m just \e[0;32mentered\e[0m\n", parsed[2], parsed[0]);
+	else
+		sprintf(srv_message, "\e[0;37m[%s] %s just entered\e[0m\n", parsed[2], parsed[0]);
 }
 
 void server_handle_quit(t_syschat *syschat, char **parsed, char *srv_message)
 {
+	int notlocked;
+
 	bzero(srv_message, BF_SIZE);
-	switch (SYSCHAT_PRINT_MODE)
-	{
-		case 3:
-			sprintf(srv_message, "\e[0;35m%s\e[0m: \e[0;32m%s\e[0m just \e[0;31mleft\e[0m\n", syschat->channel, parsed[0]);
-			break;
-		default:
-			sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m just \e[0;31mleft\e[0m\n", syschat->channel, parsed[0]);
-			break;
-	}
+	*strchr(parsed[2], '\r') = '\0';
+	notlocked = strcmp(parsed[2], syschat->channel);
+	if (!notlocked)
+		sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m just \e[0;31mleft\e[0m\n", parsed[2], parsed[0]);
+	else
+		sprintf(srv_message, "\e[0;37m[%s] %s just left\e[0m\n", parsed[2], parsed[0]);
 }
 
-void server_handle_privmsg(char **parsed, char *srv_message)
+void server_handle_privmsg(t_syschat *syschat, char **parsed, char *srv_message)
 {
+	int notlocked = 1;
+
 	bzero(srv_message, BF_SIZE);
-	switch (SYSCHAT_PRINT_MODE)
+	if (parsed[2][0] == '#')
 	{
-		case 1:
-			memmove(parsed[2], parsed[2]+1, strlen(parsed[2]));
-			sprintf(srv_message, "[\e[0;34m%s\e[0m@\e[0;35m%s\e[0m]$ \e[0;34m%s\e[0m", parsed[0], parsed[2], parsed[3]);
-			break;
-		case 2:
-			sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;34m%s\e[0m -> \e[0;34m%s\e[0m", parsed[2], parsed[0], parsed[3]);
-			break;
-		case 3:
-			sprintf(srv_message, "\e[0;34m%s\e[0m: \e[0;34m%s\e[0m", parsed[0], parsed[3]);
-			break;
-		default:
+		notlocked = strcmp(parsed[2], syschat->channel);
+		if (!notlocked)
 			sprintf(srv_message, "[\e[0;35m%s\e[0m] <\e[0;34m%s\e[0m>: \e[0;34m%s\e[0m", parsed[2], parsed[0], parsed[3]);
-			break;
+		else
+			sprintf(srv_message, "\e[0;37m[%s] <%s>: %s\e[0m", parsed[2], parsed[0], parsed[3]);
+	}
+	else
+	{
+		if (syschat->channel)
+			notlocked = strcmp(parsed[0], syschat->channel);
+		if (!notlocked)
+			sprintf(srv_message, "<\e[0;34m%s\e[0m> -> <\e[0;33m%s\e[0m>: \e[0;34m%s\e[0m", parsed[0], syschat->nickname, parsed[3]);
+		else
+			sprintf(srv_message, "\e[0;37m<%s> -> <%s>: %s\e[0m", parsed[0], syschat->nickname, parsed[3]);
 	}
 }
 
 void server_handle_nick(t_syschat *syschat, char **parsed, char *srv_message)
 {
 	bzero(srv_message, BF_SIZE);
-	switch (SYSCHAT_PRINT_MODE)
-	{
-		case 3:
-			sprintf(srv_message, "\e[0;35m%s\e[0m: \e[0;31m%s\e[0m is now \e[0;32m%s\e[0m", syschat->channel, parsed[0], parsed[2]);
-			break;
-		default:
-			sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;31m%s\e[0m is now \e[0;32m%s\e[0m", syschat->channel, parsed[0], parsed[2]);
-			break;
-	}
+	sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;31m%s\e[0m is now \e[0;32m%s\e[0m", syschat->hostname, parsed[0], parsed[2]);
 }
 
 void server_handle_kick(t_syschat *syschat, char **parsed, char *srv_message)
 {
+	int notlocked;
+
 	bzero(srv_message, BF_SIZE);
-	switch (SYSCHAT_PRINT_MODE)
-	{
-		case 3:
-			sprintf(srv_message, "\e[0;35m%s\e[0m: \e[0;32m%s\e[0m kicked \e[0;31m%s\e[0m\n", syschat->channel, parsed[0], parsed[3]);
-			break;
-		default:
-			sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m kicked \e[0;31m%s\e[0m\n", syschat->channel, parsed[0], parsed[3]);
-			break;
-	}
+	*strchr(parsed[2], '\r') = '\0';
+	notlocked = strcmp(parsed[2], syschat->channel);
+	if (!notlocked)
+		sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m kicked \e[0;31m%s\e[0m\n", parsed[2], parsed[0], parsed[3]);
+	else
+		sprintf(srv_message, "\e[0;37m[%s] %s kicked %s\e[0m\n", parsed[2], parsed[0], parsed[3]);
 }
 
 void server_handle_message(t_syschat *syschat, char *srv_message)
@@ -122,7 +114,7 @@ void server_handle_message(t_syschat *syschat, char *srv_message)
 	else if (strcmp(parsed[1], "QUIT") == 0 || strcmp(parsed[1], "PART") == 0)
 		server_handle_quit(syschat, parsed, srv_message);
 	else if (strcmp(parsed[1], "PRIVMSG") == 0)
-		server_handle_privmsg(parsed, srv_message);
+		server_handle_privmsg(syschat, parsed, srv_message);
 	else if (strcmp(parsed[1], "NICK") == 0)
 		server_handle_nick(syschat, parsed, srv_message);
 	else if (strcmp(parsed[1], "KICK") == 0)
