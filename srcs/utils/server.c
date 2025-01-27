@@ -1,12 +1,13 @@
 #include "server.h"
 
-static const int MANAGED_LEN = 6;
-static const char *MANAGED_COMMANDS[6] = {
+static const int MANAGED_LEN = 7;
+static const char *MANAGED_COMMANDS[7] = {
 	"PING",
 	"JOIN",
 	"QUIT",
 	"PRIVMSG",
 	"NICK",
+	"KICK",
 };
 
 void server_handle_ping(t_syschat *syschat, char **parsed, char *srv_message)
@@ -82,6 +83,20 @@ void server_handle_nick(t_syschat *syschat, char **parsed, char *srv_message)
 	}
 }
 
+void server_handle_kick(t_syschat *syschat, char **parsed, char *srv_message)
+{
+	bzero(srv_message, BF_SIZE);
+	switch (SYSCHAT_PRINT_MODE)
+	{
+		case 3:
+			sprintf(srv_message, "\e[0;35m%s\e[0m: \e[0;32m%s\e[0m kicked \e[0;31m%s\e[0m\n", syschat->channel, parsed[0], parsed[3]);
+			break;
+		default:
+			sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m kicked \e[0;31m%s\e[0m\n", syschat->channel, parsed[0], parsed[3]);
+			break;
+	}
+}
+
 void server_handle_message(t_syschat *syschat, char *srv_message)
 {
 	char **parsed;
@@ -110,6 +125,8 @@ void server_handle_message(t_syschat *syschat, char *srv_message)
 		server_handle_privmsg(parsed, srv_message);
 	else if (strcmp(parsed[1], "NICK") == 0)
 		server_handle_nick(syschat, parsed, srv_message);
+	else if (strcmp(parsed[1], "KICK") == 0)
+		server_handle_kick(syschat, parsed, srv_message);
 	else
 		if (SYSCHAT_QUIET)
 			bzero(srv_message, BF_SIZE);

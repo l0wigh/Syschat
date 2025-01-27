@@ -8,7 +8,6 @@ static t_syschat syschat;
 static struct termios oldt, newt;
 
 // TODO: Investigate a crash with (big ?) /msg command. I guess it's the parsing....
-// TODO: Add kick command support
 // TODO: Use write instead of printf when it's possible
 // TODO: Find a way to avoid "^?" to be shortly printed before printing the new buffer
 //         - This only happens on alacritty for now. going for low priority on this one
