@@ -23,9 +23,12 @@ void server_handle_ping(t_syschat *syschat, char **parsed, char *srv_message)
 void server_handle_join(t_syschat *syschat, char **parsed, char *srv_message)
 {
 	int notlocked;
+	char *remove_backr;
 
 	bzero(srv_message, BF_SIZE);
-	*strchr(parsed[2], '\r') = '\0';
+	remove_backr = strchr(parsed[2], '\r');
+	if (remove_backr)
+		*remove_backr = '\0';
 	notlocked = strcmp(parsed[2], syschat->channel);
 	if (!notlocked)
 		sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m just \e[0;32mentered\e[0m\n", parsed[2], parsed[0]);
@@ -36,9 +39,12 @@ void server_handle_join(t_syschat *syschat, char **parsed, char *srv_message)
 void server_handle_quit(t_syschat *syschat, char **parsed, char *srv_message)
 {
 	int notlocked;
+	char *remove_backr;
 
 	bzero(srv_message, BF_SIZE);
-	*strchr(parsed[2], '\r') = '\0';
+	remove_backr = strchr(parsed[2], '\r');
+	if (remove_backr)
+		*remove_backr = '\0';
 	notlocked = strcmp(parsed[2], syschat->channel);
 	if (!notlocked)
 		sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m just \e[0;31mleft\e[0m\n", parsed[2], parsed[0]);
@@ -79,9 +85,12 @@ void server_handle_nick(t_syschat *syschat, char **parsed, char *srv_message)
 void server_handle_kick(t_syschat *syschat, char **parsed, char *srv_message)
 {
 	int notlocked;
+	char *remove_backr;
 
 	bzero(srv_message, BF_SIZE);
-	*strchr(parsed[2], '\r') = '\0';
+	remove_backr = strchr(parsed[2], '\r');
+	if (remove_backr)
+		*remove_backr = '\0';
 	notlocked = strcmp(parsed[2], syschat->channel);
 	if (!notlocked)
 		sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m kicked \e[0;31m%s\e[0m\n", parsed[2], parsed[0], parsed[3]);
