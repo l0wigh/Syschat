@@ -7,17 +7,20 @@
 static t_syschat syschat;
 static struct termios oldt, newt;
 
-// TODO: Add the possibility to manage multiple channel. for this i'll need to avoid using predefined channel name
-//       - Add a visual way to see what channel/privmsg is locked
 // TODO: manage MODE server message
 // TODO: Split the QUIT and PART server message since they doesn't works the same
-// TODO: Add /PART command
 // TODO: Find a way to cut the stdin input to simulate X axis scrolling (ioctl ?)
 // TODO: Implement a char by char recv reading to go one line ("\r\n") at a time
 // TODO: Add CTCP stuff (just for fun)
 // TODO: Use write instead of printf when it's possible
+
+
 // TODO: Find a way to avoid "^?" to be shortly printed before printing the new buffer
 //         - This only happens on alacritty for now. going for low priority on this one
+// TODO: Add the possibility to manage multiple channel. for this i'll need to avoid using predefined channel name
+//       - Needs some testing now !
+// TODO: Add /PART command
+//       - Needs some testing now !
 
 void syschat_load_config(char **argv)
 {
@@ -57,6 +60,11 @@ void syschat_handle_input(char *stdin_buffer, char *buffer)
 	{
 		stdin_buffer[strlen(stdin_buffer) - 1] = '\0';
 		write(1, "\033[2K\r", 5);
+		if (syschat.channel)
+			printf("%s > ", syschat.channel);
+		else
+			printf("> ");
+		fflush(stdout);
 		write(1, stdin_buffer, strlen(stdin_buffer));
 		fflush(stdout);
 		return ;
@@ -73,6 +81,8 @@ void syschat_handle_input(char *stdin_buffer, char *buffer)
 				printf("\033M\r\033[2K\e[0;31mYou are not in a channel ! Use /join <channel>\e[0m\n");
 				bzero(stdin_buffer, BF_SIZE);
 				fflush(stdout);
+				printf("> ");
+				fflush(stdout);
 				return ;
 			}
 			sprintf(message, "PRIVMSG %s :%s\r\n", syschat.channel, stdin_buffer);
@@ -82,6 +92,10 @@ void syschat_handle_input(char *stdin_buffer, char *buffer)
 			else
 				printf("\033M<\e[0;33m%s\e[0m> -> <\e[0;34m%s\e[0m>: \e[0;33m%s\e[0m", syschat.nickname, syschat.channel, stdin_buffer);
 		}
+		if (syschat.channel)
+			printf("%s > ", syschat.channel);
+		else
+			printf("> ");
 		bzero(stdin_buffer, BF_SIZE);
 	}
 	fflush(stdout);
@@ -91,6 +105,11 @@ void syschat_handle_message(char *stdin_buffer, char *buffer)
 {
 	server_handle_message(&syschat, buffer);
 	printf("\r\033[2K%s\e[0m", buffer);
+	if (syschat.channel)
+		printf("%s > ", syschat.channel);
+	else
+		printf("> ");
+	fflush(stdout);
 	if (strlen(stdin_buffer) > 1)
 	{
 		printf("%s", stdin_buffer);

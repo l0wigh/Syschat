@@ -86,6 +86,20 @@ void commands_handle_lock(t_syschat *syschat, char **parsed)
 	syschat->channel = strdup(parsed[1]);
 }
 
+void commands_handle_part(t_syschat *syschat, char **parsed)
+{
+	char message[BF_SIZE];
+
+	bzero(message, BF_SIZE);
+	if (strcmp(syschat->channel, parsed[1]) == 0)
+	{
+		free(syschat->channel);
+		syschat->channel = NULL;
+	}
+	sprintf(message, "PART %s\r\n", parsed[1]);
+	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+}
+
 void commands_execute(t_syschat *syschat, char *command)
 {
 	char **parsed;
@@ -105,6 +119,8 @@ void commands_execute(t_syschat *syschat, char *command)
 		commands_handle_msg(syschat, command);
 	else if (strcmp(parsed[0], "lock") == 0)
 		commands_handle_lock(syschat, parsed);
+	else if (strcmp(parsed[0], "part") == 0)
+		commands_handle_part(syschat, parsed);
 
 	for (int i = 0; i != 16; i++)
 		free(parsed[i]);

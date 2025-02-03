@@ -45,7 +45,8 @@ void server_handle_quit(t_syschat *syschat, char **parsed, char *srv_message)
 	remove_backr = strchr(parsed[2], '\r');
 	if (remove_backr)
 		*remove_backr = '\0';
-	notlocked = strcmp(parsed[2], syschat->channel);
+	if (syschat->channel)
+		notlocked = strcmp(parsed[2], syschat->channel);
 	if (!notlocked)
 		sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m just \e[0;31mleft\e[0m\n", parsed[2], parsed[0]);
 	else
