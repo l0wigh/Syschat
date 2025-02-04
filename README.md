@@ -20,6 +20,7 @@ Syschat is an IRC client made only with syscall and libc + kernel functions.
     - part
     - ping
     - kick
+    - mode
 
 ## How to use
 

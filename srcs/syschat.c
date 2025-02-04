@@ -8,13 +8,14 @@
 static t_syschat syschat;
 static struct termios oldt, newt;
 
-// TODO: Split the QUIT and PART server message since they doesn't works the same
 // TODO: Find a way to cut the stdin input to simulate X axis scrolling (ioctl ?)
-// TODO: Implement a char by char recv reading to go one line ("\r\n") at a time
 // TODO: Add CTCP stuff (just for fun)
 // TODO: Use write instead of printf when it's possible
 
 
+// TODO: Implement a char by char recv reading to go one line ("\r\n") at a time
+//       - Needs some testing now !
+//       - Might be slow
 // TODO: Find a way to avoid "^?" to be shortly printed before printing the new buffer
 //         - This only happens on alacritty for now. going for low priority on this one
 // TODO: Add the possibility to manage multiple channel. for this i'll need to avoid using predefined channel name
@@ -121,6 +122,7 @@ void syschat_handle_message(char *stdin_buffer, char *buffer)
 void syschat_loop()
 {
 	char buffer[BF_SIZE];
+	char tmp_buffer[2];
 	char stdin_buffer[BF_SIZE];
 	struct epoll_event evls[64];
 	int did_say_hello = 0;
@@ -146,11 +148,28 @@ void syschat_loop()
 					syschat_say_hello();
 					did_say_hello = 1;
 				}
-				if (recv(syschat.net_socket, buffer, BF_SIZE, 0) <= 0)
+				while (!strchr(buffer, '\n'))
 				{
-					syschat.running = 0;
-					break;
+					bzero(tmp_buffer, BF_SIZE);
+					if (recv(syschat.net_socket, tmp_buffer, 1, 0) <= 0)
+					{
+						syschat.running = 0;
+						break;
+					}
+					if (strlen(buffer) == 512)
+					{
+						buffer[509] = '\r';
+						buffer[510] = '\n';
+						buffer[511] = '\0';
+						break;
+					}
+					strcat(buffer, tmp_buffer);
 				}
+				/* if (recv(syschat.net_socket, buffer, BF_SIZE, 0) <= 0) */
+				/* { */
+				/* 	syschat.running = 0; */
+				/* 	break; */
+				/* } */
 				syschat_handle_message(stdin_buffer, buffer);
 			}
 		}

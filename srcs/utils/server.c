@@ -30,7 +30,8 @@ void server_handle_join(t_syschat *syschat, char **parsed, char *srv_message)
 	remove_backr = strchr(parsed[2], '\r');
 	if (remove_backr)
 		*remove_backr = '\0';
-	notlocked = strcmp(parsed[2], syschat->channel);
+	if (syschat->channel)
+		notlocked = strcmp(parsed[2], syschat->channel);
 	if (!notlocked)
 		sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m just \e[0;32mentered\e[0m\n", parsed[2], parsed[0]);
 	else
@@ -38,6 +39,12 @@ void server_handle_join(t_syschat *syschat, char **parsed, char *srv_message)
 }
 
 void server_handle_quit(t_syschat *syschat, char **parsed, char *srv_message)
+{
+	bzero(srv_message, BF_SIZE);
+	sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m \e[0;31mdisconnected\e[0m\n", syschat->hostname, parsed[0]);
+}
+
+void server_handle_part(t_syschat *syschat, char **parsed, char *srv_message)
 {
 	int notlocked;
 	char *remove_backr;
@@ -61,7 +68,8 @@ void server_handle_privmsg(t_syschat *syschat, char **parsed, char *srv_message)
 	bzero(srv_message, BF_SIZE);
 	if (parsed[2][0] == '#')
 	{
-		notlocked = strcmp(parsed[2], syschat->channel);
+		if (syschat->channel)
+			notlocked = strcmp(parsed[2], syschat->channel);
 		if (!notlocked)
 			sprintf(srv_message, "[\e[0;35m%s\e[0m] <\e[0;34m%s\e[0m>: \e[0;34m%s\e[0m", parsed[2], parsed[0], parsed[3]);
 		else
@@ -93,7 +101,8 @@ void server_handle_kick(t_syschat *syschat, char **parsed, char *srv_message)
 	remove_backr = strchr(parsed[2], '\r');
 	if (remove_backr)
 		*remove_backr = '\0';
-	notlocked = strcmp(parsed[2], syschat->channel);
+	if (syschat->channel)
+		notlocked = strcmp(parsed[2], syschat->channel);
 	if (!notlocked)
 		sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m kicked \e[0;31m%s\e[0m\n", parsed[2], parsed[0], parsed[3]);
 	else
@@ -109,7 +118,8 @@ void server_handle_mode(t_syschat *syschat, char **parsed, char *srv_message)
 	remove_backr = strchr(parsed[3], '\r');
 	if (remove_backr)
 		*remove_backr = '\0';
-	notlocked = strcmp(parsed[2], syschat->channel);
+	if (syschat->channel)
+		notlocked = strcmp(parsed[2], syschat->channel);
 	if (!notlocked)
 		sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m changed \e[0;35m%s\e[0m modes to \e[0;36m%s\e[0m\n", syschat->hostname, parsed[0], parsed[2], parsed[3]);
 	else
@@ -138,8 +148,10 @@ void server_handle_message(t_syschat *syschat, char *srv_message)
 		server_handle_ping(syschat, parsed, srv_message);
 	else if (strcmp(parsed[1], "JOIN") == 0)
 		server_handle_join(syschat, parsed, srv_message);
-	else if (strcmp(parsed[1], "QUIT") == 0 || strcmp(parsed[1], "PART") == 0)
+	else if (strcmp(parsed[1], "QUIT") == 0)
 		server_handle_quit(syschat, parsed, srv_message);
+	else if (strcmp(parsed[1], "PART") == 0)
+		server_handle_part(syschat, parsed, srv_message);
 	else if (strcmp(parsed[1], "PRIVMSG") == 0)
 		server_handle_privmsg(syschat, parsed, srv_message);
 	else if (strcmp(parsed[1], "NICK") == 0)
