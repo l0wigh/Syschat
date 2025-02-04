@@ -150,7 +150,7 @@ void syschat_loop()
 				}
 				while (!strchr(buffer, '\n'))
 				{
-					bzero(tmp_buffer, BF_SIZE);
+					bzero(tmp_buffer, 2);
 					if (recv(syschat.net_socket, tmp_buffer, 1, 0) <= 0)
 					{
 						syschat.running = 0;
@@ -165,12 +165,8 @@ void syschat_loop()
 					}
 					strcat(buffer, tmp_buffer);
 				}
-				/* if (recv(syschat.net_socket, buffer, BF_SIZE, 0) <= 0) */
-				/* { */
-				/* 	syschat.running = 0; */
-				/* 	break; */
-				/* } */
-				syschat_handle_message(stdin_buffer, buffer);
+				if (syschat.running)
+					syschat_handle_message(stdin_buffer, buffer);
 			}
 		}
 	}
