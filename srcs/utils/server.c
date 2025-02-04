@@ -23,7 +23,7 @@ void server_handle_ping(t_syschat *syschat, char **parsed, char *srv_message)
 
 void server_handle_join(t_syschat *syschat, char **parsed, char *srv_message)
 {
-	int notlocked;
+	int notlocked = 1;
 	char *remove_backr;
 
 	bzero(srv_message, BF_SIZE);
@@ -46,7 +46,7 @@ void server_handle_quit(t_syschat *syschat, char **parsed, char *srv_message)
 
 void server_handle_part(t_syschat *syschat, char **parsed, char *srv_message)
 {
-	int notlocked;
+	int notlocked = 1;
 	char *remove_backr;
 
 	bzero(srv_message, BF_SIZE);
@@ -94,7 +94,7 @@ void server_handle_nick(t_syschat *syschat, char **parsed, char *srv_message)
 
 void server_handle_kick(t_syschat *syschat, char **parsed, char *srv_message)
 {
-	int notlocked;
+	int notlocked = 1;
 	char *remove_backr;
 
 	bzero(srv_message, BF_SIZE);
@@ -111,7 +111,7 @@ void server_handle_kick(t_syschat *syschat, char **parsed, char *srv_message)
 
 void server_handle_mode(t_syschat *syschat, char **parsed, char *srv_message)
 {
-	int notlocked;
+	int notlocked = 1;
 	char *remove_backr;
 
 	bzero(srv_message, BF_SIZE);
