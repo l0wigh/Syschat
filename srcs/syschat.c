@@ -3,11 +3,11 @@
 #include "utils/error.h"
 #include "utils/commands.h"
 #include "utils/server.h"
+#include <stdio.h>
 
 static t_syschat syschat;
 static struct termios oldt, newt;
 
-// TODO: manage MODE server message
 // TODO: Split the QUIT and PART server message since they doesn't works the same
 // TODO: Find a way to cut the stdin input to simulate X axis scrolling (ioctl ?)
 // TODO: Implement a char by char recv reading to go one line ("\r\n") at a time

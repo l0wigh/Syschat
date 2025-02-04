@@ -1,6 +1,6 @@
 #include "server.h"
-static const int MANAGED_LEN = 8;
-static const char *MANAGED_COMMANDS[8] = {
+static const int MANAGED_LEN = 9;
+static const char *MANAGED_COMMANDS[9] = {
 	"PING",
 	"JOIN",
 	"QUIT",
@@ -8,6 +8,7 @@ static const char *MANAGED_COMMANDS[8] = {
 	"PRIVMSG",
 	"NICK",
 	"KICK",
+	"MODE",
 };
 
 void server_handle_ping(t_syschat *syschat, char **parsed, char *srv_message)
@@ -99,6 +100,22 @@ void server_handle_kick(t_syschat *syschat, char **parsed, char *srv_message)
 		sprintf(srv_message, "\e[0;37m[%s] %s kicked %s\e[0m\n", parsed[2], parsed[0], parsed[3]);
 }
 
+void server_handle_mode(t_syschat *syschat, char **parsed, char *srv_message)
+{
+	int notlocked;
+	char *remove_backr;
+
+	bzero(srv_message, BF_SIZE);
+	remove_backr = strchr(parsed[3], '\r');
+	if (remove_backr)
+		*remove_backr = '\0';
+	notlocked = strcmp(parsed[2], syschat->channel);
+	if (!notlocked)
+		sprintf(srv_message, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m changed \e[0;35m%s\e[0m modes to \e[0;36m%s\e[0m\n", syschat->hostname, parsed[0], parsed[2], parsed[3]);
+	else
+		sprintf(srv_message, "\e[0;37m[%s] %s changed %s modes to %s\e[0m\n", syschat->hostname, parsed[0], parsed[2], parsed[3]);
+}
+
 void server_handle_message(t_syschat *syschat, char *srv_message)
 {
 	char **parsed;
@@ -129,6 +146,8 @@ void server_handle_message(t_syschat *syschat, char *srv_message)
 		server_handle_nick(syschat, parsed, srv_message);
 	else if (strcmp(parsed[1], "KICK") == 0)
 		server_handle_kick(syschat, parsed, srv_message);
+	else if (strcmp(parsed[1], "MODE") == 0)
+		server_handle_mode(syschat, parsed, srv_message);
 	else
 		if (SYSCHAT_QUIET)
 			bzero(srv_message, BF_SIZE);
