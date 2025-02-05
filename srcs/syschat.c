@@ -182,7 +182,7 @@ void syschat_loop()
 
 int main(int argc, char **argv)
 {
-	segfault_catcher_set(1);
+	segfault_catcher_set(0);
 
 	if (argc < 2)
 		error_exit(NULL, 1);
