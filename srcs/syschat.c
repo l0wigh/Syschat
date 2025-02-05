@@ -3,11 +3,13 @@
 #include "utils/error.h"
 #include "utils/commands.h"
 #include "utils/server.h"
+#include "segfault_catcher/segfault_catcher.h"
 #include <stdio.h>
 
 static t_syschat syschat;
 static struct termios oldt, newt;
 
+// TODO: Fix stack smashing when pasting too much characters
 // TODO: Find a way to cut the stdin input to simulate X axis scrolling (ioctl ?)
 // TODO: Add CTCP stuff (just for fun)
 // TODO: Use write instead of printf when it's possible
@@ -54,7 +56,6 @@ void syschat_say_hello()
 void syschat_handle_input(char *stdin_buffer, char *buffer)
 {
 	char message[BF_SIZE];
-	char *mod_channel;
 
 	bzero(message, BF_SIZE);
 	if (buffer[0] == 127)
@@ -70,10 +71,17 @@ void syschat_handle_input(char *stdin_buffer, char *buffer)
 		fflush(stdout);
 		return ;
 	}
-	strcat(stdin_buffer, buffer);
+	if (strlen(buffer) != 512)
+		strcat(stdin_buffer, buffer);
 	if (buffer[0] == '\n')
 	{
-		if (stdin_buffer[0] == '/')
+		if (strlen(stdin_buffer) < 2)
+		{
+			printf("\033M\r");
+			fflush(stdout);
+			stdin_buffer[0] = '\0';
+		}
+		else if (stdin_buffer[0] == '/')
 			commands_execute(&syschat, stdin_buffer);
 		else
 		{
@@ -174,6 +182,8 @@ void syschat_loop()
 
 int main(int argc, char **argv)
 {
+	segfault_catcher_set(1);
+
 	if (argc < 2)
 		error_exit(NULL, 1);
 

@@ -129,7 +129,6 @@ void server_handle_mode(t_syschat *syschat, char **parsed, char *srv_message)
 void server_handle_message(t_syschat *syschat, char *srv_message)
 {
 	char **parsed;
-	char message[BF_SIZE];
 	void *managed;
 
 	for (int i = 0; i != MANAGED_LEN - 1; i++)
@@ -160,9 +159,6 @@ void server_handle_message(t_syschat *syschat, char *srv_message)
 		server_handle_kick(syschat, parsed, srv_message);
 	else if (strcmp(parsed[1], "MODE") == 0)
 		server_handle_mode(syschat, parsed, srv_message);
-	else
-		if (SYSCHAT_QUIET)
-			bzero(srv_message, BF_SIZE);
 
 	for (int i = 0; i != 16; i++)
 		free(parsed[i]);

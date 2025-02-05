@@ -27,10 +27,7 @@ typedef struct s_syschat
 	int					running;
 } t_syschat;
 
-static int BF_SIZE = 512;
-static char SYSCHAT_QUIT[14] = "Syschat 0.3.0";
-
-// Configuration
-static int SYSCHAT_QUIET = 0;
+#define BF_SIZE 512
+#define SYSCHAT_QUIT "Syschat 0.3.1"
 
 #endif
