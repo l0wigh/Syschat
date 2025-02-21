@@ -4,7 +4,6 @@
 #include "utils/commands.h"
 #include "utils/server.h"
 #include "segfault_catcher/segfault_catcher.h"
-#include <stdio.h>
 
 static t_syschat syschat;
 static struct termios oldt, newt;

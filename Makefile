@@ -19,9 +19,9 @@ PROJECT_H	= srcs/
 OBJS		= $(SRCS:.c=.o)
 OBJECTS_PREFIXED = $(addprefix $(OBJS_DIR), $(OBJS))
 CC			= gcc
-# CC_FLAGS	= -Wall -Werror -Wextra -Wno-unused-result -Wno-unused-variable -O2 -flto
+CC_FLAGS	= -Wall -Werror -Wextra -Wno-unused-result -Wno-unused-variable -O2 -flto
 # CC_FLAGS	= -Wall -Werror -Wextra -Wno-unused-result -Wno-unused-variable -g3
-CC_FLAGS	= -Wall -Werror -Wextra -g3
+# CC_FLAGS	= -Wall -Werror -Wextra -g3
 LIBS		=
 
 $(OBJS_DIR)%.o : %.c $(PROJECT_H)
@@ -46,4 +46,12 @@ fclean: clean
 
 re: fclean all
 
-.PHONY:		all clean fclean re
+install: re
+	@sudo cp syschat /usr/local/bin/syschat
+	@printf "\033[2K\r${GRN}${TOTEM} [INSTALL]${RST} done$(END)\n"
+
+uninstall: fclean
+	@sudo rm /usr/local/bin/syschat
+	@printf "\033[2K\r${GRN}${TOTEM} [UNINSTALL]${RST} done$(END)\n"
+
+.PHONY:		all clean fclean re install uninstall
