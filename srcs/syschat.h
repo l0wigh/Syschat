@@ -28,6 +28,6 @@ typedef struct s_syschat
 } t_syschat;
 
 #define BF_SIZE 512
-#define SYSCHAT_QUIT "Syschat 0.3.1"
+#define SYSCHAT_QUIT "Syschat 0.3.2"
 
 #endif

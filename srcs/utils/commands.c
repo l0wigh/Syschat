@@ -100,6 +100,20 @@ void commands_handle_part(t_syschat *syschat, char **parsed)
 	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
 }
 
+void commands_handle_cmd_list(void)
+{
+	write(1, "Commands list\n", 15);
+	write(1, "-------------\n", 15);
+	write(1, "exit                             -> Well... exit syschat\n", 58);
+	write(1, "join #<channel>                  -> join the given channel\n", 60);
+	write(1, "privmsg <username>               -> send a message to a user\n", 62);
+	write(1, "nick <new nickname>              -> change your current nickname\n", 66);
+	write(1, "clear                            -> clear the screen\n", 53);
+	write(1, "msg #<chan>/<username> <message> -> send a message to a channel or to a user\n", 78);
+	write(1, "lock #<channel>/<username>       -> lock yourself on a channel or private message\n", 83);
+	write(1, "part #<channel>                  -> leave a channel\n", 53);
+}
+
 void commands_execute(t_syschat *syschat, char *command)
 {
 	char **parsed;
@@ -121,6 +135,8 @@ void commands_execute(t_syschat *syschat, char *command)
 		commands_handle_lock(syschat, parsed);
 	else if (strcmp(parsed[0], "part") == 0)
 		commands_handle_part(syschat, parsed);
+	else if (strcmp(parsed[0], "?") == 0)
+		commands_handle_cmd_list();
 
 	for (int i = 0; i != 16; i++)
 		free(parsed[i]);
