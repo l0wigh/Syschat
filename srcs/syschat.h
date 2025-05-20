@@ -28,6 +28,7 @@ typedef struct s_syschat
 } t_syschat;
 
 #define BF_SIZE 512
-#define SYSCHAT_QUIT "Syschat 0.3.2"
+#define SYSCHAT_QUIT "Syschat 0.3.3"
+#define SYSCHAT_USERINFO "You want that sweet sweet Syschat client ? https://github.com/L0Wigh/syschat"
 
 #endif
