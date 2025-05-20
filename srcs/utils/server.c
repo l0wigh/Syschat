@@ -1,4 +1,5 @@
 #include "server.h"
+#include <sys/socket.h>
 static const int MANAGED_LEN = 9;
 static const char *MANAGED_COMMANDS[9] = {
 	"PING",
@@ -9,6 +10,7 @@ static const char *MANAGED_COMMANDS[9] = {
 	"NICK",
 	"KICK",
 	"MODE",
+	"NOTICE",
 };
 
 void server_handle_ping(t_syschat *syschat, char **parsed, char *srv_message)
@@ -77,6 +79,19 @@ void server_handle_privmsg(t_syschat *syschat, char **parsed, char *srv_message)
 	}
 	else
 	{
+	    // CTCP stuff, we might want to make it go in specific .c and .h files
+        if (parsed[3][0] == 1)
+        {
+            char message[BF_SIZE];
+
+            bzero(message, BF_SIZE);
+            if (parsed[3][1] == 'V' && parsed[3][2] == 'E' && parsed[3][3] == 'R')
+                sprintf(message, "NOTICE %s :%cVERSION %s%c\r\n", parsed[0], 1, SYSCHAT_QUIT, 1);
+            else
+                sprintf(message, "NOTICE %s :%s\r\n", parsed[0], "Unknown CTCP command !");
+            send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+            return ;
+        }
 		if (syschat->channel)
 			notlocked = strcmp(parsed[0], syschat->channel);
 		if (!notlocked)
@@ -126,6 +141,16 @@ void server_handle_mode(t_syschat *syschat, char **parsed, char *srv_message)
 		sprintf(srv_message, "\e[0;37m[%s] %s changed %s modes to %s\e[0m\n", syschat->hostname, parsed[0], parsed[2], parsed[3]);
 }
 
+void server_handle_notice(t_syschat *syschat, char *srv_message)
+{
+    (void)syschat;
+    (void)srv_message;
+	return ;
+    // Here check CTCP
+    // if it is, cut the beginning
+    // if it's not print everything
+}
+
 void server_handle_message(t_syschat *syschat, char *srv_message)
 {
 	char **parsed;
@@ -159,6 +184,8 @@ void server_handle_message(t_syschat *syschat, char *srv_message)
 		server_handle_kick(syschat, parsed, srv_message);
 	else if (strcmp(parsed[1], "MODE") == 0)
 		server_handle_mode(syschat, parsed, srv_message);
+	else if (strcmp(parsed[1], "NOTICE") == 0)
+		server_handle_notice(syschat, srv_message);
 
 	for (int i = 0; i != 16; i++)
 		free(parsed[i]);

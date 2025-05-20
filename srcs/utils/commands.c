@@ -114,6 +114,15 @@ void commands_handle_cmd_list(void)
 	write(1, "part #<channel>                  -> leave a channel\n", 53);
 }
 
+void commands_handle_ctcp(t_syschat *syschat, char **parsed)
+{
+	char message[BF_SIZE];
+
+	bzero(message, BF_SIZE);
+	sprintf(message, "PRIVMSG %s :%c%s%c\r\n", parsed[1], 1, parsed[2], 1);
+	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+}
+
 void commands_execute(t_syschat *syschat, char *command)
 {
 	char **parsed;
@@ -137,6 +146,8 @@ void commands_execute(t_syschat *syschat, char *command)
 		commands_handle_part(syschat, parsed);
 	else if (strcmp(parsed[0], "?") == 0)
 		commands_handle_cmd_list();
+	else if (strcmp(parsed[0], "ctcp") == 0)
+		commands_handle_ctcp(syschat, parsed);
 
 	for (int i = 0; i != 16; i++)
 		free(parsed[i]);
