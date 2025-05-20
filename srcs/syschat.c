@@ -163,11 +163,11 @@ void syschat_loop()
 						syschat.running = 0;
 						break;
 					}
-					if (strlen(buffer) == 512)
+					if (strlen(buffer) == 500)
 					{
-						buffer[509] = '\r';
-						buffer[510] = '\n';
-						buffer[511] = '\0';
+						buffer[498] = '\r';
+						buffer[499] = '\n';
+						buffer[500] = '\0';
 						break;
 					}
 					strcat(buffer, tmp_buffer);
