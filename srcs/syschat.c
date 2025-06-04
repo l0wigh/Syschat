@@ -10,9 +10,7 @@ static struct termios oldt, newt;
 
 // TODO: Fix stack smashing when pasting too much characters
 // TODO: Find a way to cut the stdin input to simulate X axis scrolling (ioctl ?)
-// TODO: Add CTCP stuff (just for fun)
 // TODO: Use write instead of printf when it's possible
-
 
 // TODO: Implement a char by char recv reading to go one line ("\r\n") at a time
 //       - Needs some testing now !

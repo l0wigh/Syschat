@@ -10,6 +10,7 @@ FILES = syschat \
 		utils/error \
 		utils/commands \
 		utils/server \
+		utils/ctcp \
 		segfault_catcher/segfault_catcher \
 
 SRCS = $(FILES:%=srcs/%.c)

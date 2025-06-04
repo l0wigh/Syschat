@@ -1,5 +1,7 @@
 #include "server.h"
+#include "ctcp.h"
 #include <sys/socket.h>
+
 static const int MANAGED_LEN = 10;
 static const char *MANAGED_COMMANDS[10] = {
 	"PING",
@@ -79,29 +81,11 @@ void server_handle_privmsg(t_syschat *syschat, char **parsed, char *srv_message)
 	}
 	else
 	{
-	    // TODO: CTCP stuff, we might want to make it go in specific .c and .h files
         if (parsed[3][0] == 1)
         {
-            char message[BF_SIZE];
-
-            bzero(message, BF_SIZE);
-			if (parsed[3][1] == 'V' && parsed[3][2] == 'E' && parsed[3][3] == 'R')
-			{
-				sprintf(message, "NOTICE %s :%cVERSION %s%c\r\n", parsed[0], 1, SYSCHAT_QUIT, 1);
-				send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
-			}
-			else if (parsed[3][1] == 'U' && parsed[3][2] == 'S' && parsed[3][3] == 'E')
-			{
-				sprintf(message, "NOTICE %s :%cUSERINFO %s%c\r\n", parsed[0], 1, SYSCHAT_USERINFO, 1);
-				send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
-			}
-			else if (parsed[3][1] == 'C' && parsed[3][2] == 'L' && parsed[3][3] == 'I')
-			{
-				sprintf(message, "NOTICE %s :%cCLIENTINFO VERSION USERINFO%c\r\n", parsed[0], 1, 1);
-				send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
-			}
+			ctcp_handle_request(syschat, parsed);
 			sprintf(srv_message, "[\e[0;35m%s\e[0m] Asked for CTCP: \e[0;36m%s\e[0m", parsed[0], parsed[3]);
-            return ;
+            return;
         }
 		if (syschat->channel)
 			notlocked = strcmp(parsed[0], syschat->channel);
