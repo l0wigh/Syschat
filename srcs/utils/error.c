@@ -51,6 +51,7 @@ void error_cleaning(t_syschat *syschat)
 	if (!syschat)
 		return;
 	syschat->listing = 0;
+	syschat->elist_mask = 0;
 
 	if (syschat->net_socket)
 		close(syschat->net_socket);

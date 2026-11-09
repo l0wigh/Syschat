@@ -6,7 +6,7 @@
 #define TAB_IDLE "\033[0;37m"
 #define RESET "\033[0m"
 
-static int	screen_width(void)
+int	screen_width(void)
 {
 	struct winsize	ws;
 
@@ -15,7 +15,7 @@ static int	screen_width(void)
 	return (80);
 }
 
-static int	screen_height(void)
+int	screen_height(void)
 {
 	struct winsize	ws;
 

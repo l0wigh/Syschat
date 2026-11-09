@@ -1,6 +1,7 @@
 #include "server.h"
 #include "buffers.h"
 #include "ctcp.h"
+#include "../utils/screen.h"
 #include <sys/socket.h>
 
 static void	target_chan(char *target, size_t size, const char *value)
@@ -46,8 +47,7 @@ void server_handle_join(t_syschat *syschat, char **parsed, char *srv_message, ch
 		if (index != -1)
 			syschat->buffers[index].joined = 1;
 	}
-	snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m just \e[0;32mentered\e[0m",
-		target, parsed[0]);
+	snprintf(srv_message, BF_SIZE, "-!- \e[0;32m%s\e[0m just \e[0;32mentered\e[0m", parsed[0]);
 }
 
 void server_handle_quit(t_syschat *syschat, char **parsed, char *srv_message, char *target)
@@ -70,8 +70,7 @@ void server_handle_part(t_syschat *syschat, char **parsed, char *srv_message, ch
 		if (index != -1)
 			syschat->buffers[index].joined = 0;
 	}
-	snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m just \e[0;31mleft\e[0m",
-		target, parsed[0]);
+	snprintf(srv_message, BF_SIZE, "-!- \e[0;32m%s\e[0m just \e[0;31mleft\e[0m", parsed[0]);
 }
 
 void server_handle_privmsg(t_syschat *syschat, char **parsed, char *srv_message, char *target)
@@ -81,7 +80,7 @@ void server_handle_privmsg(t_syschat *syschat, char **parsed, char *srv_message,
 	{
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
 		/* The channel name is already the tab title: no need to repeat it. */
-		snprintf(srv_message, BF_SIZE, "<\e[0;34m%s\e[0m>: \e[0;34m%s\e[0m",
+		snprintf(srv_message, BF_SIZE, "<\e[0;34m%s\e[0m> \e[0;34m%s\e[0m",
 			parsed[0], parsed[3]);
 	}
 	else
@@ -164,6 +163,7 @@ static int	numeric_listing(t_syschat *syschat, char **parsed, char *srv_message,
 	char *target, int code)
 {
 	int	shown;
+	int	width;
 
 	if (!syschat->listing || (code != 321 && code != 322 && code != 323))
 		return (-1);
@@ -182,10 +182,19 @@ static int	numeric_listing(t_syschat *syschat, char **parsed, char *srv_message,
 		shown = 0;
 	if (!shown)
 		return (0);
+	/* The topic is the only useful column: size the channel one from the
+	** real terminal width, or the topic vanishes on a narrow window. */
+	width = screen_width() - 25;
+	if (width < 8)
+		width = 8;
+	if (width > 24)
+		width = 24;
 	if (parsed[5][0])
-		snprintf(srv_message, BF_SIZE, "\e[0;37m%-24s %4s  %s\e[0m", parsed[3], parsed[4], parsed[5]);
+		snprintf(srv_message, BF_SIZE, "\e[0;37m%-*.*s %4s  %s\e[0m",
+			width, width, parsed[3], parsed[4], parsed[5]);
 	else
-		snprintf(srv_message, BF_SIZE, "\e[0;37m%-24s %4s\e[0m", parsed[3], parsed[4]);
+		snprintf(srv_message, BF_SIZE, "\e[0;37m%-*.*s %4s\e[0m",
+			width, width, parsed[3], parsed[4]);
 	syschat->list_received++;
 	return (1);
 }
@@ -237,7 +246,7 @@ int server_handle_message(t_syschat *syschat, char *srv_message, char *target)
 		{
 			/* ISUPPORT: several 005 lines per session, scan them all. */
 			for (int i = 3; i != 16; i++)
-				if (strncmp(parsed[i], "ELIST=", 6) == 0 && strchr(parsed[i], 'C'))
+				if (strncmp(parsed[i], "ELIST=", 6) == 0 && strchr(parsed[i] + 6, 'C'))
 					syschat->elist_mask = 1;
 		}
 		displayed = numeric_listing(syschat, parsed, srv_message, target, code);

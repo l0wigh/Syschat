@@ -222,7 +222,7 @@ def main():
         "PONG answered split PING": state["pong"] is not None and "split" in (state["pong"] or ""),
         "local echo sent": any("PRIVMSG #alpha :hello from tab test" in l for l in log),
         "help listed": "Commands list" in plain,
-        "timestamps on every line": re.search(r"\[\d\d:\d\d\] <bob>: alpha one", plain) is not None,
+        "timestamps on every line": re.search(r"\[\d\d:\d\d\] <bob> alpha one", plain) is not None,
     })
     for k, v in checks.items():
         print(("OK   " if v else "FAIL ") + k)
