@@ -70,6 +70,7 @@ or, on a machine without make (the only target exercised so far):
 
 Tests (no unit tests, functional checks only):
 
+    python3 tests/cli_args.py               # offline, argument handling
     python3 tests/functional_buffers.py     # offline, mock IRC server + pty
     SYSCHAT_NET_TESTS=1 python3 tests/network_smoke.py   # real network, opt-in
 

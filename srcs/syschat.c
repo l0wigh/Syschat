@@ -22,8 +22,18 @@ void syschat_load_config(char **argv, int argc_port)
 	bzero(&syschat, sizeof(t_syschat));
 	syschat.hostname = strdup(argv[1]);
 	syschat.nickname = strdup(argv[2]);
-	syschat.port = argc_port > 3 ? atoi(argv[3]) : 6667;
-	if (syschat.port <= 0 || syschat.port > 65535)
+	if (argc_port > 3)
+	{
+		char	*end;
+		long	parsed;
+
+		end = NULL;
+		parsed = strtol(argv[3], &end, 10);
+		if (end == argv[3] || *end != '\0' || parsed < 1 || parsed > 65535)
+			error_exit(NULL, 9);
+		syschat.port = (int) parsed;
+	}
+	else
 		syschat.port = 6667;
 	syschat.active = -1;
 	buffers_new(&syschat, syschat.hostname);
