@@ -15,11 +15,16 @@ The client connects to the first on the command line, the second with
   * /exit sends QUIT to every connection and exits 0
 
 Usage:  make && python3 tests/functional_multi.py
+
+SYSCHAT_BIN overrides the client binary (default ./syschat) so the scenario
+can also be replayed against a build of an older commit to archive the
+red run, without copying this file into another tree.
 """
 import os, pty, re, select, socket, subprocess, sys, termios, time, fcntl, struct, threading
 
 HOST = "127.0.0.1"
 PORT_A, PORT_B = 16680, 16681
+BIN = os.environ.get("SYSCHAT_BIN", "./syschat")
 STATE = {
     "A": {"log": [], "joins": [], "quit": False},
     "B": {"log": [], "joins": [], "quit": False},
@@ -114,7 +119,7 @@ def main():
 
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
-    proc = subprocess.Popen(["./syschat", HOST, "tester", str(PORT_A)],
+    proc = subprocess.Popen([BIN, HOST, "tester", str(PORT_A)],
                             stdin=slave, stdout=slave, stderr=slave, close_fds=True)
     os.close(slave)
     out = bytearray()
