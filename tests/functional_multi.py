@@ -250,6 +250,47 @@ def main():
     checks["QUIT reached server one"] = STATE["A"]["quit"]
     checks["QUIT reached server two"] = STATE["B"]["quit"]
 
+    # --- /disconnect on the last remaining connection -----------------
+    # The client has to say why it exits, and it can only say it after the
+    # loop: the buffer that would hold the message is freed with the server's
+    # tabs. So this reads the pty output after the process is gone, never a
+    # buffer (that distinction cost a wrong green once already).
+    d_master, d_slave = pty.openpty()
+    fcntl.ioctl(d_slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
+    dproc = subprocess.Popen([BIN, HOST, "tester", str(PORT_A)],
+                             stdin=d_slave, stdout=d_slave, stderr=d_slave,
+                             close_fds=True)
+    os.close(d_slave)
+    dout = bytearray()
+
+    def drain(seconds):
+        end = time.time() + seconds
+        while time.time() < end:
+            r, _, _ = select.select([d_master], [], [], 0.05)
+            if r:
+                try:
+                    chunk = os.read(d_master, 65536)
+                except OSError:
+                    return
+                if not chunk:
+                    return
+                dout.extend(chunk)
+
+    drain(1.5)
+    os.write(d_master, b"/disconnect\n")
+    drain(1.0)
+    try:
+        drc = dproc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        dproc.kill()
+        dproc.wait()
+        drc = -1
+    drain(0.5)
+    dtext = strip_ansi(dout.decode(errors="replace"))
+    checks["last /disconnect exits 0"] = drc == 0
+    checks["last /disconnect says why it exits"] = "no server left" in dtext
+    os.close(d_master)
+
     print("=== SERVER A LOG ===")
     for l in STATE["A"]["log"]:
         print("A>> " + l)
