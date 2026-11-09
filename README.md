@@ -1,6 +1,9 @@
 # Syschat 0.4.2-RC1 IRC Client
 
-Syschat is an IRC client made only with syscall and libc + kernel functions.
+Syschat is an IRC client made with syscall and libc + kernel functions. The
+one exception is TLS: mbedTLS is vendored in `vendor/mbedtls` and built with
+the same compiler, so there is still nothing to install on the system and the
+binary stays self-contained. With TLS off, the client only uses libc.
 
 ## How it works ?
 
@@ -25,11 +28,42 @@ Syschat is an IRC client made only with syscall and libc + kernel functions.
 
 ## How to use
 
-    Usage: ./syschat <host> <nick> [port]
+    Usage: ./syschat <host> <nick> [port] [--tls] [--no-tls] [--insecure]
 
 The port is optional and defaults to 6667. It must be a full integer between
 1 and 65535: `./syschat irc.libera.chat fr0sted 7000` is valid, `... fr0sted
 abc` is refused.
+
+The command line is otherwise unchanged: no flag is needed for the previous
+behaviour, and old commands keep working as before.
+
+## TLS
+
+TLS is **off by default**, as it always was, except when the port is 6697:
+that port means TLS on every network worth the name, so
+`./syschat irc.libera.chat nick 6697` is encrypted without any flag.
+
+| flag / variable | effect |
+| --- | --- |
+| `--tls` / `-tls` | force TLS on any port (`./syschat host nick 6667 --tls`) |
+| `--no-tls` / `-no-tls` | force plaintext, even on 6697 |
+| `--insecure` / `-insecure` | TLS without certificate verification (self-signed bouncer) |
+| `SYSCHAT_TLS=1` / `=0` | same as `--tls` / `--no-tls` |
+| `SYSCHAT_TLS_NO_VERIFY=1` | same as `--insecure` |
+
+The first line of the server buffer tells you what you got, e.g.
+`Connected (TLSv1.3, TLS1-3-CHACHA20-POLY1305-SHA256, cert verified)` or
+`Connected (plaintext, no encryption)`. There is no silent encryption.
+
+Certificates are checked against the system bundle
+(`/etc/ssl/certs/ca-certificates.crt`, `/etc/ssl/cert.pem`,
+`/usr/local/etc/openssl/cert.pem`). If none is present and `--insecure` was
+not given, the handshake is refused rather than downgraded to "trust anything".
+
+If the handshake fails for any reason (port is plaintext, certificate
+rejected, server speaks another protocol), syschat **does not exit**: it
+reconnects in plaintext and prints, in red, that the session is not
+encrypted. You can still connect to a server that does not do TLS.
 
 Join a channel with /join #channel and start to talk.
 
@@ -51,7 +85,8 @@ of warning and continuing — that is the sanitiser, not a syschat crash.
 
 Debugging: `SYSCHAT_DEBUG=/tmp/syschat.log ./syschat <host> <nick>` appends
 every raw incoming line and the buffer it was routed to. The trace holds the
-raw traffic in clear (there is no TLS) — do not leave that file around.
+decrypted traffic in clear, including when TLS is on — do not leave that file
+around.
 
 The first buffer is the server window: registration and MOTD lines, server
 notices and errors (numerics) are printed there.
@@ -74,6 +109,10 @@ or, on a machine without make (the only target exercised so far):
 
     ./build.sh
 
+The vendored mbedTLS objects are built once into `build/mbedtls/` (about 30s
+the first time) and reused by the three variants; `./build.sh clean` drops
+them. The Makefile does the same thing under `build/mbedtls/`.
+
 Tests (no unit tests, functional checks only):
 
     tests/run_all.sh                        # offline: release + debug + buffers
@@ -85,6 +124,7 @@ Tests (no unit tests, functional checks only):
     ./build.sh && python3 tests/functional_list.py     # /list
     ./build.sh && python3 tests/functional_input.py    # UTF-8 input, 512-byte limit
     ./build.sh && python3 tests/functional_colors.py   # nick palette
+    ./build.sh && python3 tests/tls_handshake.py       # TLS, fallback, port defaults
     SYSCHAT_NET_TESTS=1 python3 tests/network_smoke.py # real network, opt-in
 
 `SYSCHAT_NET_TESTS=1` is mandatory for the network test: without it the

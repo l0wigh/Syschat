@@ -35,6 +35,11 @@ python3 tests/functional_input.py
 echo "--- functional_colors ---"
 python3 tests/functional_colors.py
 
+# TLS needs no outside network: self-signed certificate generated on the fly,
+# local TLS server in Python, local plaintext server for the fallback path.
+echo "--- tls_handshake ---"
+python3 tests/tls_handshake.py
+
 # wrap_line() is static inside screen.c and only reachable by including the
 # translation unit. This covers the wrapping itself (row count, widths, UTF-8,
 # indent); the '..' marker is emitted in screen_draw, not in wrap_line, and
