@@ -36,8 +36,10 @@ echo "--- functional_colors ---"
 python3 tests/functional_colors.py
 
 # wrap_line() is static inside screen.c and only reachable by including the
-# translation unit; the marker shown when a line starts above the view cannot
-# be triggered from a 30x100 pty, so it is covered here instead.
+# translation unit. This covers the wrapping itself (row count, widths, UTF-8,
+# indent); the '..' marker is emitted in screen_draw, not in wrap_line, and
+# stays verified by manual frames only -- an incoming line is capped at 511
+# bytes, so it only triggers on a short or narrow terminal.
 echo "--- wrap_unit ---"
 ${CC:-gcc} -std=c11 -Wall -Wextra -I. -o tests/wrap_unit tests/wrap_unit.c
 ./tests/wrap_unit

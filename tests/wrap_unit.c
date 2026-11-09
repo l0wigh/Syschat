@@ -5,6 +5,10 @@
 ** whole renderer into a test binary would need a terminal. Including the
 ** translation unit keeps the function private and the test runnable anywhere.
 **
+** Scope: the wrapping itself -- row count, widths, indentation, UTF-8. The
+** '..' marker for a line that starts above the view is emitted by screen_draw,
+** not by wrap_line, and is NOT covered here; it is verified by manual frames.
+**
 ** Build (from the repository root):
 **   gcc -std=c11 -Wall -Wextra -I. -o tests/wrap_unit tests/wrap_unit.c
 */
