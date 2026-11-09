@@ -4,8 +4,16 @@
 #
 #   ./build.sh          release (-O2)
 #   ./build.sh debug    -g3 -O0, no segfault handler, symbols for gdb/valgrind
-#   ./build.sh ubsan    -g3 -O1 -fsanitize=undefined (ASan is not available
-#                       with this toolchain: it fails to link)
+#   ./build.sh ubsan    -g3 -O1 -fsanitize=undefined
+#
+# Notes on this toolchain (zig cc, musl target):
+#   - ASan is NOT usable: -fsanitize=address compiles but fails to link
+#     (__asan_init undefined, no compiler-rt, no libasan on disk).
+#   - UBSan is usable but does not behave like upstream: on the first
+#     undefined behaviour it panics, prints file:line and exits with 134.
+#     That is not a syschat crash, it is the sanitiser stopping the process.
+#   - That runtime emits no __ubsan_handle_* symbols, so `nm | grep ubsan`
+#     proves nothing here: trigger a real UB to check the instrumentation.
 set -e
 cd "$(dirname "$0")"
 CC="${CC:-gcc}"

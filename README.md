@@ -37,6 +37,12 @@ messages are marked with a `*`.
 - `/close [#channel]` : leave and close a buffer
 - `/?` : list the commands
 
+Debug builds: `./build.sh debug` produces `syschat_dbg` (`-g3 -O0`, symbols,
+segfault handler disabled so gdb/valgrind stop on the real frame and a core
+can be written). `./build.sh ubsan` adds `-fsanitize=undefined`; on this
+toolchain the first undefined behaviour **panics and exits with 134** instead
+of warning and continuing — that is the sanitiser, not a syschat crash.
+
 Debugging: `SYSCHAT_DEBUG=/tmp/syschat.log ./syschat <host> <nick>` appends
 every raw incoming line and the buffer it was routed to. The trace holds the
 raw traffic in clear (there is no TLS) — do not leave that file around.
