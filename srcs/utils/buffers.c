@@ -381,16 +381,36 @@ void buffers_switch(t_syschat *syschat, int index)
 
 void buffers_cycle(t_syschat *syschat, int step)
 {
-	int	index;
+	int	list[SYSCHAT_MAX_BUFFERS];
+	int	n;
+	int	pos;
 
 	if (!syschat || syschat->buffer_count <= 0)
 		return ;
-	index = syschat->active;
-	if (index < 0)
-		index = 0;
-	else
-		index = (index + step + syschat->buffer_count) % syschat->buffer_count;
-	buffers_switch(syschat, index);
+	/*
+	** Tab / Shift-Tab move inside the buffer bar, which only holds the
+	** buffers of the CURRENT server -- its channels, its private messages
+	** and its /list window. Jumping to another server's "chan" from a key
+	** press is the silent routing the multi-server work forbids; /server and
+	** /switch <label>/<buffer> stay the explicit ways across servers.
+	*/
+	n = 0;
+	pos = -1;
+	for (int i = 0; i != syschat->buffer_count; i++)
+	{
+		t_buffer	*b = &syschat->buffers[i];
+
+		if (b->kind == BUF_SERVER || b->server_id != (unsigned) syschat->current)
+			continue ;
+		if (i == syschat->active)
+			pos = n;
+		list[n++] = i;
+	}
+	if (n == 0)
+		return ;
+	if (pos < 0)
+		pos = (step > 0) ? -1 : 0;
+	buffers_switch(syschat, list[(pos + step + n) % n]);
 }
 
 char *buffers_active_name(t_syschat *syschat)

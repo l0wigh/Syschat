@@ -59,7 +59,7 @@ void server_handle_quit(t_syschat *syschat, t_conn *conn, char **parsed, char *s
 {
 	(void) syschat;
 	(void) conn;
-	target_chan(target, SYSCHAT_NAME_LEN, conn->hostname);
+	target_chan(target, SYSCHAT_NAME_LEN, syschat_conn_name(conn));
 	bzero(srv_message, BF_SIZE);
 	snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m \e[0;31mdisconnected\e[0m",
 		conn->hostname, parsed[0]);
@@ -125,7 +125,7 @@ void server_handle_nick(t_syschat *syschat, t_conn *conn, char **parsed, char *s
 {
 	(void) syschat;
 	(void) conn;
-	target_chan(target, SYSCHAT_NAME_LEN, conn->hostname);
+	target_chan(target, SYSCHAT_NAME_LEN, syschat_conn_name(conn));
 	bzero(srv_message, BF_SIZE);
 	snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] \e[0;31m%s\e[0m is now \e[0;32m%s\e[0m",
 		conn->hostname, parsed[0], parsed[2]);
@@ -153,7 +153,7 @@ void server_handle_mode(t_syschat *syschat, t_conn *conn, char **parsed, char *s
 	(void) conn;
 	bzero(srv_message, BF_SIZE);
 	if (parsed[2][0] != '#')
-		target_chan(target, SYSCHAT_NAME_LEN, conn->hostname);
+		target_chan(target, SYSCHAT_NAME_LEN, syschat_conn_name(conn));
 	else
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
 	snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m changed \e[0;35m%s\e[0m modes to \e[0;36m%s\e[0m",
@@ -169,11 +169,11 @@ void server_handle_notice(t_syschat *syschat, t_conn *conn, char **parsed, char 
 	if (parsed[2][0] == '#')
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
 	else if (parsed[2][0] == '*' || (conn->nickname && strcasecmp(parsed[2], conn->nickname) == 0))
-		target_chan(target, SYSCHAT_NAME_LEN, conn->hostname);
+		target_chan(target, SYSCHAT_NAME_LEN, syschat_conn_name(conn));
 	else
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[0]);
 	if (strcasecmp(target, conn->nickname) == 0)
-		target_chan(target, SYSCHAT_NAME_LEN, conn->hostname);
+		target_chan(target, SYSCHAT_NAME_LEN, syschat_conn_name(conn));
 	if (parsed[3][0] == 1)
 		snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] CTCP answer: \e[0;36m%s\e[0m",
 			parsed[0], parsed[3]);
@@ -309,7 +309,7 @@ int server_handle_message(t_syschat *syschat, t_conn *conn, char *srv_message, c
 				default:
 					break ;
 			}
-			target_chan(target, SYSCHAT_NAME_LEN, conn->hostname);
+			target_chan(target, SYSCHAT_NAME_LEN, syschat_conn_name(conn));
 			if (target_name && buffers_find_on(syschat, (unsigned) (conn - syschat->conns), target_name) != -1)
 				target_chan(target, SYSCHAT_NAME_LEN, target_name);
 			text_index = 3;

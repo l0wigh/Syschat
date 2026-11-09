@@ -103,9 +103,10 @@ enum
 /*
 ** One buffer = one tab. `name` is either "#channel", a nickname (private
 ** message) or the server hostname (the server window of that connection).
-** Two servers can both have "#chan": the key is (server_id, name), and
-** `label` is what the tab bar prints -- the bare name when it is unique,
-** "srv/#chan" when the same name exists on another server.
+** Two servers can both have "#chan": the key is (server_id, name).
+** `label` is the addressing form used by /switch and /close -- the bare name
+** when it is unique, "srv/chan" when it is not. The buffer bar prints `name`
+** only, because it is scoped to the current server and cannot collide.
 ** `lines` is a ring buffer of already coloured lines; nothing is ever
 ** dropped unless the ring wraps (SYSCHAT_HISTORY lines of scrollback).
 */
@@ -151,6 +152,7 @@ void	syschat_apply_tls_policy(t_conn *conn);
 int		syschat_conn_add(t_syschat *syschat, const char *label, const char *host,
 			const char *nickname, int port);
 void	syschat_conn_close(t_syschat *syschat, int id);
+const char	*syschat_conn_name(const t_conn *conn);
 void	syschat_say_hello(t_conn *conn);
 void	syschat_status(t_syschat *syschat, const char *text);
 void	syschat_echo(char *text);

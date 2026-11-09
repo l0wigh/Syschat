@@ -97,60 +97,67 @@ static void	append_clipped(char *dst, size_t dstsz, const char *src, int width)
 }
 
 /*
-** Tab bar: the active buffer must stay visible, so the bar scrolls instead of
-** truncating from the left. The right segment reserves its columns first, or
-** it would never be drawn on a loaded client.
+** Both bars are the same widget: a list of chips where the active one must
+** stay visible, so the bar starts as late as possible instead of truncating
+** from the left. The right segment reserves its columns first, or it would
+** never be drawn on a loaded client.
 */
-static size_t	tab_bar(t_syschat *syschat, char *dst, size_t dstsz, int width)
+typedef struct s_chip
+{
+	const char	*label;
+	int			unread;
+	int			active;
+} t_chip;
+
+static size_t	chips_bar(t_chip *chips, int n, const char *right_text,
+	char *dst, size_t dstsz, int width)
 {
 	size_t	used;
-	char	right[SYSCHAT_NAME_LEN + 24];
 	int		widths[SYSCHAT_MAX_BUFFERS];
 	int		right_len;
 	int		avail;
 	int		visible;
 	int		start;
+	int		active;
 	int		i;
 
 	used = 0;
 	visible = 0;
 	if (dstsz > 1)
 		dst[0] = '\0';
+	active = -1;
 	right_len = 0;
-	right[0] = '\0';
-	if (width >= 40)
+	if (right_text && width >= 40)
 	{
-		snprintf(right, sizeof(right), "%d buf%s",
-			syschat->buffer_count, syschat->buffer_count > 1 ? "s" : "");
-		right_len = screen_text_width(right);
+		right_len = screen_text_width(right_text);
 		if (right_len < 0 || right_len > width / 2)
 			right_len = 0;
 	}
 	avail = width - (right_len ? right_len + 2 : 0);
 	if (avail < 8)
 		avail = 8;
-	for (i = 0; i != syschat->buffer_count; i++)
+	for (i = 0; i != n; i++)
 	{
-		/* every tab is " name ", plus the unread marker when there is one */
-		widths[i] = screen_text_width(syschat->buffers[i].label) + 2
-			+ (syschat->buffers[i].unread ? 1 : 0);
+		/* every chip is " name ", plus the unread marker when there is one */
+		widths[i] = screen_text_width(chips[i].label) + 2
+			+ (chips[i].unread ? 1 : 0);
+		if (chips[i].active)
+			active = i;
 	}
-	/* Not even the active tab fits: keep a position marker, never a blank
+	/* Not even the active chip fits: keep a position marker, never a blank
 	** bar the user cannot read anything from. */
-	if (syschat->active >= 0 && syschat->active < syschat->buffer_count
-		&& widths[syschat->active] > avail)
+	if (active >= 0 && widths[active] > avail)
 	{
 		used += snprintf(dst + used, dstsz - used, "%s%d/%d%s%s", TAB_ACTIVE,
-			syschat->active + 1, syschat->buffer_count,
-			syschat->buffers[syschat->active].unread ? "*" : "", RESET);
+			active + 1, n, chips[active].unread ? "*" : "", RESET);
 		return (used);
 	}
 	start = 0;
-	if (syschat->active >= 0 && syschat->active < syschat->buffer_count)
+	if (active >= 0)
 	{
 		int	room = avail;
 
-		for (i = syschat->active; i >= 0; i--)
+		for (i = active; i >= 0; i--)
 		{
 			room -= widths[i];
 			if (room < 0)
@@ -163,23 +170,23 @@ static size_t	tab_bar(t_syschat *syschat, char *dst, size_t dstsz, int width)
 		used += snprintf(dst + used, dstsz - used, "%s<", TAB_IDLE);
 		visible++;
 	}
-	for (i = start; i != syschat->buffer_count; i++)
+	for (i = start; i != n; i++)
 	{
 		if (visible + widths[i] > avail)
 			break ;
 		visible += widths[i];
-		if (i == syschat->active)
+		if (i == active)
 			used += snprintf(dst + used, dstsz - used, "%s %s %s",
-				TAB_ACTIVE, syschat->buffers[i].label, RESET);
+				TAB_ACTIVE, chips[i].label, RESET);
 		else
 			used += snprintf(dst + used, dstsz - used, "%s %s%s ",
-				syschat->buffers[i].unread ? TAB_UNREAD : TAB_IDLE,
-				syschat->buffers[i].label,
-				syschat->buffers[i].unread ? "*" : "");
+				chips[i].unread ? TAB_UNREAD : TAB_IDLE,
+				chips[i].label,
+				chips[i].unread ? "*" : "");
 		if (used >= dstsz - 1)
 			return (dstsz - 1);
 	}
-	if (i != syschat->buffer_count && visible < avail)
+	if (i != n && visible < avail)
 	{
 		used += snprintf(dst + used, dstsz - used, "%s>", TAB_IDLE);
 		visible++;
@@ -193,10 +200,58 @@ static size_t	tab_bar(t_syschat *syschat, char *dst, size_t dstsz, int width)
 			visible++;
 		}
 		dst[used] = '\0';
-		used += snprintf(dst + used, dstsz - used, "\e[90m%s", right);
+		used += snprintf(dst + used, dstsz - used, "\e[90m%s", right_text);
 		used += snprintf(dst + used, dstsz - used, "%s", RESET);
 	}
 	return (used);
+}
+
+/*
+** Top bar: the servers. One chip per live connection, the current one
+** highlighted. A closed slot is not a chip: it would advertise a server the
+** user can no longer reach.
+*/
+static int		server_chips(t_syschat *syschat, t_chip *chips)
+{
+	int	n;
+
+	n = 0;
+	for (int i = 0; i != syschat->conn_count && n < SYSCHAT_MAX_SERVERS; i++)
+	{
+		if (!syschat->conns[i].alive)
+			continue ;
+		chips[n].label = syschat->conns[i].label ? syschat->conns[i].label : "?";
+		chips[n].unread = 0;
+		chips[n].active = (i == syschat->current);
+		n++;
+	}
+	return (n);
+}
+
+/*
+** Bottom bar: the buffers of the CURRENT server only -- its channels, its
+** private messages and its /list window. The server console is not here, it
+** is the chip of the top bar. They are printed by `name`, not `label`: the
+** scope is one server, so a homonymous "#chan" on another server cannot
+** collide in this bar, and the "srv/#chan" form stays a command syntax.
+*/
+static int		buffer_chips(t_syschat *syschat, t_chip *chips)
+{
+	int	n;
+
+	n = 0;
+	for (int i = 0; i != syschat->buffer_count && n < SYSCHAT_MAX_BUFFERS; i++)
+	{
+		t_buffer	*b = &syschat->buffers[i];
+
+		if (b->kind == BUF_SERVER || b->server_id != (unsigned) syschat->current)
+			continue ;
+		chips[n].label = b->name;
+		chips[n].unread = b->unread;
+		chips[n].active = (i == syschat->active);
+		n++;
+	}
+	return (n);
 }
 
 static void	row_push(char ***rows, int *count, char *row)
@@ -331,7 +386,11 @@ void	screen_draw(t_syschat *syschat, const char *input)
 	int		rows_count;
 	int		cols;
 	int		room;
-	int		index;
+	int			index;
+	int			nchips;
+	int			buffer_rows;
+	char		right[32];
+	t_chip		chips[SYSCHAT_MAX_BUFFERS];
 	t_buffer	*buffer;
 
 	rows_count = screen_height();
@@ -342,9 +401,31 @@ void	screen_draw(t_syschat *syschat, const char *input)
 		return ;
 	used = 0;
 	used += snprintf(out + used, size - used, "\033[H");
-	used += tab_bar(syschat, out + used, size - used, cols);
+	/*
+	** Two bars: servers on top, then the buffers of the current server. The
+	** bottom bar is skipped when the current server has none (its console is
+	** the only tab), so the conversation keeps that row.
+	*/
+	nchips = server_chips(syschat, chips);
+	if (nchips)
+	{
+		snprintf(right, sizeof(right), "%d/%d srv", nchips, SYSCHAT_MAX_SERVERS);
+		used += chips_bar(chips, nchips, right, out + used, size - used, cols);
+	}
+	else
+		used += snprintf(out + used, size - used, "%s-- no server --%s",
+			TAB_IDLE, RESET);
 	used += snprintf(out + used, size - used, "\033[K\r\n");
-	room = rows_count - 2;
+	buffer_rows = 0;
+	nchips = buffer_chips(syschat, chips);
+	if (nchips)
+	{
+		snprintf(right, sizeof(right), "%d buf%s", nchips, nchips > 1 ? "s" : "");
+		used += chips_bar(chips, nchips, right, out + used, size - used, cols);
+		used += snprintf(out + used, size - used, "\033[K\r\n");
+		buffer_rows = 1;
+	}
+	room = rows_count - 2 - buffer_rows;
 	if (room < 0)
 		room = 0;
 	index = syschat->active;

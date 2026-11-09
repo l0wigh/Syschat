@@ -130,6 +130,21 @@ int	syschat_conn_add(t_syschat *syschat, const char *label, const char *host,
 	return (id);
 }
 
+/*
+** Name of a connection's console buffer: the label, never the host name.
+** With a label different from the host, routing server-level lines to
+** conn->hostname opened a SECOND console tab for the same server, and the
+** name-based kind inference classified it as a private message.
+*/
+const char	*syschat_conn_name(const t_conn *conn)
+{
+	if (!conn)
+		return ("?");
+	if (conn->label && conn->label[0])
+		return (conn->label);
+	return (conn->hostname ? conn->hostname : "?");
+}
+
 void	syschat_conn_close(t_syschat *syschat, int id)
 {
 	t_conn	*conn;
@@ -492,7 +507,7 @@ void syschat_read_network(t_conn *conn)
 			if (server_handle_message(syschat, conn, srv, target))
 			{
 				if (target[0] == '\0')
-					snprintf(target, SYSCHAT_NAME_LEN, "%s", conn->hostname);
+					snprintf(target, SYSCHAT_NAME_LEN, "%s", syschat_conn_name(conn));
 				index = buffers_route_on(syschat, sid, target);
 				if (index < 0)
 				{

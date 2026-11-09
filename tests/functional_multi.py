@@ -174,10 +174,16 @@ def main():
     checks["joined #chan on both servers"] = "#chan" in STATE["A"]["joins"] \
         and "#chan" in STATE["B"]["joins"]
 
-    # labels must disambiguate the two tabs, not print "#chan" twice
-    tail = plain()[-6000:]
-    checks["tabs are labelled <server>/#chan"] = \
-        ("%s/#chan" % A_LABEL) in tail and "two/#chan" in tail
+    # Two bars: the servers on top, then the buffers of the CURRENT server
+    # only. The buffer bar prints the bare name -- scoped to one server it
+    # cannot collide -- so the proof that the two "#chan" stay apart is that
+    # exactly one of them is on screen at a time, and the server bar carries
+    # both labels.
+    rows = last_frame().split("\r\n")
+    server_row, buffer_row = rows[0], rows[1] if len(rows) > 1 else ""
+    checks["server bar lists both servers"] = A_LABEL in server_row and "two" in server_row
+    checks["buffer bar shows only the active server's buffers"] = \
+        buffer_row.count("#chan") == 1
 
     # --- routing ------------------------------------------------------
     def inject(name, line):
@@ -219,9 +225,11 @@ def main():
     # --- close one server --------------------------------------------
     send("/close two\n")
     pump(0.7)
-    bar = last_frame().split("\r\n")[0]
-    checks["closing a server removes its tab"] = "two/#chan" not in bar
-    checks["the other server is still visible"] = A_LABEL in bar
+    rows = last_frame().split("\r\n")
+    server_row = rows[0]
+    checks["closing a server removes it from the server bar"] = "two" not in server_row
+    checks["the other server is still visible"] = A_LABEL in server_row
+    checks["the surviving server keeps its buffer bar"] = "#chan" in rows[1]
 
     inject("A", ":alice!a@h PRIVMSG #chan :still-alive-after-close\r\n")
     pump(0.6)
