@@ -66,6 +66,7 @@ def serve(srv, ready):
                     time.sleep(0.2)
                     # 3 lines in a single write: must not lose any
                     conn.sendall((
+                        ":carol!c@h PRIVMSG #alpha :" + "\u00e9" * 100 + "\r\n"
                         ":bob!b@h PRIVMSG #beta :beta one\r\n"
                         ":bob!b@h PRIVMSG #alpha :alpha one\r\n"
                         ":bob!b@h PRIVMSG #alpha :alpha two\r\n"
@@ -167,6 +168,10 @@ def main():
 
     open("/tmp/syschat_raw.bin","wb").write(out)
     text = out.decode(errors="replace")
+    # Incoming accented text must be clipped by columns, not bytes: a byte
+    # clip halves the line and can split a UTF-8 character in two.
+    plain = strip_ansi(text)
+    marks["accented line clipped by columns"] = ("\u00e9" * 60 in plain) and ("\ufffd" not in plain)
     stripped = []
     i = 0
     while i < len(text):

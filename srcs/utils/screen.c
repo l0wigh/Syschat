@@ -28,16 +28,52 @@ int	screen_height(void)
 }
 
 /*
+** Bytes making up the UTF-8 character starting at `s` (at least 1).
+** A byte is a continuation byte when its top two bits are 10.
+*/
+static size_t	utf8_len(const char *s)
+{
+	unsigned char	c;
+
+	c = (unsigned char)*s;
+	if ((c & 0xE0) == 0xC0)
+		return (2);
+	if ((c & 0xF0) == 0xE0)
+		return (3);
+	if ((c & 0xF8) == 0xF0)
+		return (4);
+	return (1);
+}
+
+/* Displayed columns of an ASCII/UTF-8 string (one column per character). */
+static int		text_width(const char *s)
+{
+	int	width;
+
+	width = 0;
+	while (*s)
+	{
+		if (((unsigned char)*s & 0xC0) != 0x80)
+			width++;
+		s++;
+	}
+	return (width);
+}
+
+/*
 ** Copy at most `width` *visible* characters, keeping ANSI sequences intact.
-** Prevents a long line from wrapping and destroying the layout.
+** Counts characters, not bytes: one 'é' is one column, and a multi-byte
+** character is copied whole or not at all, never split in half.
 */
 static void	append_clipped(char *dst, size_t dstsz, const char *src, int width)
 {
 	size_t	used;
+	size_t	len;
 	int		visible;
+
 	used = 0;
 	visible = 0;
-	while (*src && visible < width && used + 2 < dstsz)
+	while (*src && visible < width)
 	{
 		if (*src == '\033')
 		{
@@ -49,7 +85,12 @@ static void	append_clipped(char *dst, size_t dstsz, const char *src, int width)
 			}
 			continue ;
 		}
-		dst[used++] = *src++;
+		len = utf8_len(src);
+		if (used + len + 1 >= dstsz)
+			break ;
+		memcpy(dst + used, src, len);
+		used += len;
+		src += len;
 		visible++;
 	}
 	dst[used] = '\0';
@@ -79,8 +120,9 @@ static size_t	tab_bar(t_syschat *syschat, char *dst, size_t dstsz, int width)
 	right[0] = '\0';
 	if (width >= 40)
 	{
-		right_len = snprintf(right, sizeof(right), "%d buf%s",
+		snprintf(right, sizeof(right), "%d buf%s",
 			syschat->buffer_count, syschat->buffer_count > 1 ? "s" : "");
+		right_len = text_width(right);
 		if (right_len < 0 || right_len > width / 2)
 			right_len = 0;
 	}
@@ -90,7 +132,7 @@ static size_t	tab_bar(t_syschat *syschat, char *dst, size_t dstsz, int width)
 	for (i = 0; i != syschat->buffer_count; i++)
 	{
 		/* active: " name " (no brackets), others: " [name]". */
-		widths[i] = (int)strlen(syschat->buffers[i].name) + 2
+		widths[i] = text_width(syschat->buffers[i].name) + 2
 			+ (i == syschat->active ? 0 : 1)
 			+ (syschat->buffers[i].unread ? 1 : 0);
 	}
