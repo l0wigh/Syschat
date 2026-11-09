@@ -230,6 +230,7 @@ static int	wrap_line(const char *src, int width, char ***out)
 	size_t	start;
 	size_t	step;
 	int		visible;
+	int		limit;
 	int		count;
 
 	*out = NULL;
@@ -243,6 +244,7 @@ static int	wrap_line(const char *src, int width, char ***out)
 		return (0);
 	len = 0;
 	visible = 0;
+	limit = width;
 	sgr[0] = '\0';
 	while (*src)
 	{
@@ -260,7 +262,7 @@ static int	wrap_line(const char *src, int width, char ***out)
 				memcpy(sgr, row + start, len - start + 1);
 			continue ;
 		}
-		if (visible == width)
+		if (visible == limit)
 		{
 			row[len] = '\0';
 			row_push(&rows, &count, row);
@@ -269,10 +271,19 @@ static int	wrap_line(const char *src, int width, char ***out)
 				break ;
 			len = 0;
 			visible = 0;
+			/* Continuation rows are indented with spaces (never a bar: a
+			** copy from the terminal must stay clean) and lose the same
+			** width, so no row can overflow the terminal. */
+			limit = width > 3 ? width - 2 : width;
 			if (sgr[0])
 			{
 				memcpy(row, sgr, strlen(sgr));
 				len = strlen(sgr);
+			}
+			if (limit != width && len + 3 < cap)
+			{
+				row[len++] = ' ';
+				row[len++] = ' ';
 			}
 			while (*src == ' ')
 				src++;
@@ -316,6 +327,7 @@ void	screen_draw(t_syschat *syschat, const char *input)
 	size_t	used;
 	char	**rows;
 	int		nrows;
+	int		top_cut;
 	int		rows_count;
 	int		cols;
 	int		room;
@@ -344,6 +356,7 @@ void	screen_draw(t_syschat *syschat, const char *input)
 		** on the last message, and only the last `room` rows are kept. */
 		rows = NULL;
 		nrows = 0;
+		top_cut = 0;
 		for (int i = buffer->count - 1; i >= 0 && nrows < room; i--)
 		{
 			char	**wrapped;
@@ -357,13 +370,25 @@ void	screen_draw(t_syschat *syschat, const char *input)
 				if (nrows < room)
 					row_push(&rows, &nrows, wrapped[j]);
 				else
+				{
+					/* This line starts above the view: say so instead of
+					** letting the top row begin in the middle of a sentence. */
+					top_cut = 1;
 					free(wrapped[j]);
+				}
 			}
 			free(wrapped);
 		}
 		for (int i = nrows - 1; i >= 0; i--)
 		{
-			used += snprintf(out + used, size - used, "%s\033[K\r\n", rows[i]);
+			/* The marker replaces the continuation indent, so the row keeps
+			** exactly the width it was wrapped for. */
+			if (top_cut && i == nrows - 1)
+				used += snprintf(out + used, size - used,
+						"\033[90m..\033[0m%s\033[K\r\n",
+						rows[i] + (strncmp(rows[i], "  ", 2) == 0 ? 2 : 0));
+			else
+				used += snprintf(out + used, size - used, "%s\033[K\r\n", rows[i]);
 			free(rows[i]);
 		}
 		free(rows);
