@@ -25,6 +25,12 @@ Syschat is an IRC client made only with syscall and libc + kernel functions.
 
 ## How to use
 
+    Usage: ./syschat <host> <nick> [port]
+
+The port is optional and defaults to 6667. It must be a full integer between
+1 and 65535: `./syschat irc.libera.chat fr0sted 7000` is valid, `... fr0sted
+abc` is refused.
+
 Join a channel with /join #channel and start to talk.
 
 Every channel, and every private conversation, gets its own buffer. The top
@@ -70,9 +76,11 @@ or, on a machine without make (the only target exercised so far):
 
 Tests (no unit tests, functional checks only):
 
-    python3 tests/cli_args.py               # offline, argument handling
-    python3 tests/functional_buffers.py     # offline, mock IRC server + pty
-    SYSCHAT_NET_TESTS=1 python3 tests/network_smoke.py   # real network, opt-in
+    tests/run_all.sh                        # offline: cli_args + buffers
+
+    ./build.sh && python3 tests/cli_args.py            # argument handling
+    ./build.sh && python3 tests/functional_buffers.py  # mock IRC server + pty
+    SYSCHAT_NET_TESTS=1 python3 tests/network_smoke.py # real network, opt-in
 
 `SYSCHAT_NET_TESTS=1` is mandatory for the network test: without it the
 script refuses to run, so a `tests/*.py` glob can never open a connection to

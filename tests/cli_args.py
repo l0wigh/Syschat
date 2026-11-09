@@ -17,16 +17,6 @@ def run(args, timeout=6):
     return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 
 
-def does_not_abort(args, timeout=2):
-    """Starts the client and kills it: must not die from the port parsing."""
-    proc = subprocess.Popen([BIN] + args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    try:
-        proc.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait()
-        return True, "still running after %ss" % timeout
-    return proc.returncode not in (-6, 134), "exited %s" % proc.returncode
 
 
 checks = {}
@@ -46,9 +36,12 @@ checks["port 99999 -> refused, exit 9"] = code == 9 and "65535" in out
 code, out = run(["127.0.0.1", "tester", "-1"])
 checks["port -1 -> refused, exit 9"] = code == 9 and "65535" in out
 
-ok, why = does_not_abort(["127.0.0.1", "tester"])
-checks["host nick (no port) -> no abort"] = ok
+# No port: the path that used to abort. An unresolvable host makes the check
+# hermetic -- no dependency on a local server listening on 6667 -- and the
+# crash happened in argv parsing, before any lookup: exit 4 means we got past it.
+code, out = run(["no-such-host.invalid", "tester"], timeout=10)
+checks["host nick (no port) -> parses, then fails on DNS (4)"] = code == 4
 
 for name, passed in checks.items():
-    print(("OK   " if passed else "FAIL ") + name + ("" if passed else "  [" + why if name.startswith("host nick") else ""))
+    print(("OK   " if passed else "FAIL ") + name)
 sys.exit(0 if all(checks.values()) else 1)
