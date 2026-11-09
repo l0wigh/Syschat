@@ -105,6 +105,7 @@ static void syschat_send_line(char *input)
 void syschat_handle_input(char *buffer, int size)
 {
 	static int	escape = 0;
+	static int	input_full = 0;
 	int			index;
 
 	for (index = 0; index != size; index++)
@@ -148,11 +149,30 @@ void syschat_handle_input(char *buffer, int size)
 			}
 			input_len = 0;
 			input[0] = '\0';
+			input_full = 0;
 		}
-		else if ((unsigned char) c >= 32 && input_len + 1 < SYSCHAT_LINE_LEN)
+		else if ((unsigned char) c >= 32)
 		{
-			input[input_len++] = c;
-			input[input_len] = '\0';
+			if (input_len + 1 >= SYSCHAT_LINE_LEN)
+			{
+				/* A paste longer than the line buffer used to vanish here,
+				** silently, before the send path could warn about it. */
+				if (!input_full)
+				{
+					input_full = 1;
+					char	warn[128];
+
+					snprintf(warn, sizeof(warn),
+						"\e[0;31minput full: %d characters max, the rest is ignored\e[0m",
+						SYSCHAT_LINE_LEN - 1);
+					buffers_append(&syschat, syschat.active, warn);
+				}
+			}
+			else
+			{
+				input[input_len++] = c;
+				input[input_len] = '\0';
+			}
 		}
 	}
 	screen_draw(&syschat, input);

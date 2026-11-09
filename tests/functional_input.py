@@ -120,6 +120,11 @@ except UnicodeDecodeError:
     marks["truncation keeps whole characters"] = False
 marks["truncation is announced to the user"] = "message tronqué" in f
 
+send(("x" * 1500).encode())       # a paste longer than the input buffer
+send(b"\x7f")
+f = frame()
+marks["over-long paste is announced, not silently cut"] = "input full" in f
+
 proc.terminate()
 try:
     proc.wait(timeout=5)
