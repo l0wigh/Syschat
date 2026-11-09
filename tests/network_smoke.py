@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 """Optional real-network smoke test (needs outbound TCP 6667).
 
-Usage: ./build.sh && python3 tests/network_smoke.py [irc.libera.chat]
+Usage: ./build.sh && SYSCHAT_NET_TESTS=1 python3 tests/network_smoke.py [host]
+
+It refuses to run without SYSCHAT_NET_TESTS=1: this is the only test that
+talks to the public Internet.
 
 Registers a throwaway nickname, opens two channels, sends a message in each
 buffer and checks the client stayed connected. This is the only test that
 exercises a real IRC server; tests/functional_buffers.py runs offline.
 """
 import os, pty, select, subprocess, sys, termios, time, fcntl, struct, random, re
+
+if os.environ.get("SYSCHAT_NET_TESTS") != "1":
+    sys.exit("refusing to run: this test opens a REAL IRC connection "
+             "(registers a nickname, creates channels).\n"
+             "Set SYSCHAT_NET_TESTS=1 to allow it.")
 
 HOST = sys.argv[1] if len(sys.argv) > 1 else "irc.libera.chat"
 NICK = "scbuf%05d" % random.randint(0, 99999)

@@ -37,6 +37,10 @@ messages are marked with a `*`.
 - `/close [#channel]` : leave and close a buffer
 - `/?` : list the commands
 
+Debugging: `SYSCHAT_DEBUG=/tmp/syschat.log ./syschat <host> <nick>` appends
+every raw incoming line and the buffer it was routed to. The trace holds the
+raw traffic in clear (there is no TLS) — do not leave that file around.
+
 The first buffer is the server window: registration and MOTD lines, server
 notices and errors (numerics) are printed there.
 
@@ -61,7 +65,11 @@ or, on a machine without make (the only target exercised so far):
 Tests (no unit tests, functional checks only):
 
     python3 tests/functional_buffers.py     # offline, mock IRC server + pty
-    python3 tests/network_smoke.py          # optional, real network
+    SYSCHAT_NET_TESTS=1 python3 tests/network_smoke.py   # real network, opt-in
+
+`SYSCHAT_NET_TESTS=1` is mandatory for the network test: without it the
+script refuses to run, so a `tests/*.py` glob can never open a connection to
+a public IRC network.
 
 ## Compile flags ?
 
