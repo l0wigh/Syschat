@@ -485,11 +485,17 @@ void	screen_draw(t_syschat *syschat, const char *input)
 		used += snprintf(out + used, size - used,
 			"\033[0;37mNo server yet. /connect <nick> <server> <host> [port] to open one, "
 			"/? for help.\033[0m\033[K\r\n");
+		int	first;
+
 		line = 1;
 		/* The ring is right aligned: the oldest entry sits at
-		** SYSCHAT_STATUS_LINES - status_count, not at 0. */
-		for (int i = SYSCHAT_STATUS_LINES - syschat->status_count;
-			i != SYSCHAT_STATUS_LINES && line < room; i++, line++)
+		** SYSCHAT_STATUS_LINES - status_count, not at 0. When the ring holds
+		** more lines than the window, keep the NEWEST ones: the last answer
+		** is the one the user is waiting for. */
+		first = SYSCHAT_STATUS_LINES - syschat->status_count;
+		if (SYSCHAT_STATUS_LINES - first > room - 1)
+			first = SYSCHAT_STATUS_LINES - (room - 1);
+		for (int i = first; i != SYSCHAT_STATUS_LINES && line < room; i++, line++)
 			used += snprintf(out + used, size - used, "%s\033[K\r\n",
 				syschat->status[i] ? syschat->status[i] : "");
 		for (; line < room; line++)

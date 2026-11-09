@@ -439,18 +439,32 @@ def main():
     threading.Thread(target=hang_up_once, daemon=True).start()
     os.write(m2, ("/connect bob plain 127.0.0.1 %d\n" % strict_port).encode())
     pump2(2.5)
-    # With no other server alive the client is allowed to end (nothing left
-    # to talk to); what must NOT happen is the fatal exit(10) of
-    # error_tls_exit(), which used to take the whole session down.
-    try:
-        strict_rc = strict.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        strict.kill()
-        strict_rc = -1
+    # A /connect that never worked must not close the app: the refusals are
+    # the first thing a user hits (typo in the address, TLS required), and
+    # the prompt has to come back so the command can be retried.
+    checks["a refused hot /connect leaves the client running"] = strict.poll() is None
     last2 = [f for f in out2.decode(errors="replace").split("\x1b[H") if f.strip()]
     checks["--tls-required explains the refusal"] = \
         bool(last2) and "TLS is required" in last2[-1]
-    checks["a refused hot /connect is not a fatal TLS exit"] = strict_rc == 0
+    os.write(m2, b"/?\n")
+    pump2(0.8)
+    last2 = [f for f in out2.decode(errors="replace").split("\x1b[H") if f.strip()]
+    checks["the prompt still answers after a refused /connect"] = \
+        bool(last2) and "Commands list" in last2[-1]
+    os.write(m2, b"/connect bob dead 127.0.0.1 1\n")      # nothing listens
+    pump2(1.2)
+    checks["an unreachable /connect leaves the client running"] = strict.poll() is None
+    last2 = [f for f in out2.decode(errors="replace").split("\x1b[H") if f.strip()]
+    checks["an unreachable /connect is explained"] = \
+        bool(last2) and "cannot reach" in last2[-1]
+    checks["no bogus 'no server left' after a refused /connect"] = \
+        "no server left" not in out2.decode(errors="replace")
+    os.write(m2, b"/exit\n")
+    try:
+        checks["the client still exits 0 on demand"] = strict.wait(timeout=5) == 0
+    except subprocess.TimeoutExpired:
+        strict.kill()
+        checks["the client still exits 0 on demand"] = False
     pump2(0.2)
 
     print("=== SERVER A LOG ===")

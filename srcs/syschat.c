@@ -148,7 +148,6 @@ const char	*syschat_conn_name(const t_conn *conn)
 void	syschat_conn_close(t_syschat *syschat, int id)
 {
 	t_conn	*conn;
-	int		alive;
 
 	if (!syschat || id < 0 || id >= syschat->conn_count)
 		return ;
@@ -177,14 +176,21 @@ void	syschat_conn_close(t_syschat *syschat, int id)
 	conn->label = NULL;
 	conn->hostname = NULL;
 	conn->nickname = NULL;
-	alive = 0;
+	/*
+	** Pure cleanup: closing a slot says nothing about whether the session
+	** is over. Ending the loop is decided by the callers that actually lost
+	** a live server -- a /connect that never worked must not close the app.
+	*/
+}
+
+int	syschat_any_alive(t_syschat *syschat)
+{
+	if (!syschat)
+		return (0);
 	for (int i = 0; i != syschat->conn_count; i++)
 		if (syschat->conns[i].alive)
-			alive++;
-	/* The client used to exit when its only server hung up: keep that,
-	** but a dead server among several must not close the others. */
-	if (!alive)
-		syschat->running = 0;
+			return (1);
+	return (0);
 }
 
 /*
@@ -482,6 +488,8 @@ void syschat_read_network(t_conn *conn)
 		** text to the very tab that is about to be freed.
 		*/
 		syschat_conn_close(syschat, (int) sid);
+		if (!syschat_any_alive(syschat))
+			syschat->running = 0;
 		snprintf(line, sizeof(line), "\e[0;31m-- %s disconnected\e[0m", label);
 		buffers_notice(syschat, sid, line);
 		screen_draw(syschat, input);

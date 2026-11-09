@@ -196,6 +196,8 @@ void commands_handle_part(t_syschat *syschat, char **parsed)
 		if (srv >= 0)
 		{
 			syschat_conn_close(syschat, srv);
+			if (!syschat_any_alive(syschat))
+				syschat->running = 0;
 			return ;
 		}
 		index = buffers_find(syschat, parsed[1]);
@@ -208,6 +210,8 @@ void commands_handle_part(t_syschat *syschat, char **parsed)
 	if (kind == BUF_SERVER)
 	{
 		syschat_conn_close(syschat, sid);
+		if (!syschat_any_alive(syschat))
+			syschat->running = 0;
 		return ;
 	}
 	if (kind == BUF_CHANNEL)
@@ -335,10 +339,12 @@ void commands_handle_connect(t_syschat *syschat, char **parsed)
 
 		snprintf(reason, sizeof(reason), "%s", syschat->conns[id].tls_reason);
 		syschat_conn_close(syschat, id);
-		if (strict)
+		/* Only claim a TLS failure when TLS was actually attempted: a dead
+		** host fails before any handshake. */
+		if (strict && reason[0])
 			snprintf(line, sizeof(line),
 				"connect: TLS is required (--tls-required) and the handshake failed: %s",
-				reason[0] ? reason : "no TLS answer");
+				reason);
 		else
 			snprintf(line, sizeof(line), "connect: cannot reach %s:%d", parsed[3], port);
 		commands_say(syschat, line);
@@ -389,6 +395,8 @@ void commands_handle_disconnect(t_syschat *syschat, char **parsed)
 	snprintf(message, BF_SIZE, "QUIT :%s\r\n", SYSCHAT_QUIT);
 	net_send(&syschat->conns[id], message, strlen(message));
 	syschat_conn_close(syschat, id);
+	if (!syschat_any_alive(syschat))
+		syschat->running = 0;
 	/* Say it in a window that still exists; the caller repaints. */
 	snprintf(message, BF_SIZE, "\e[0;31m-- %s disconnected\e[0m", label);
 	buffers_notice(syschat, (unsigned) id, message);

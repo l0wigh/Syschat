@@ -156,6 +156,8 @@ void	syschat_apply_tls_policy(t_conn *conn);
 int		syschat_conn_add(t_syschat *syschat, const char *label, const char *host,
 			const char *nickname, int port);
 void	syschat_conn_close(t_syschat *syschat, int id);
+/* 1 when at least one connection is still alive. */
+int		syschat_any_alive(t_syschat *syschat);
 const char	*syschat_conn_name(const t_conn *conn);
 void	syschat_say_hello(t_conn *conn);
 void	syschat_status(t_syschat *syschat, const char *text);
