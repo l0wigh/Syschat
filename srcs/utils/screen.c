@@ -1,7 +1,7 @@
 #include "screen.h"
 #include "buffers.h"
 
-#define TAB_ACTIVE "\033[1;37m"
+#define TAB_ACTIVE "\033[1;36m"
 #define TAB_UNREAD "\033[1;33m"
 #define TAB_IDLE "\033[0;37m"
 #define RESET "\033[0m"
@@ -406,7 +406,7 @@ void	screen_draw(t_syschat *syschat, const char *input)
 		int			plen = (int)(strlen(name) + strlen(nick)) + 7;
 
 		used += snprintf(out + used, size - used,
-				"\033[K\033[90m[%s]\033[0m \033[1;37m<%s>\033[0m ", name, nick);
+				"\033[K\033[90m[%s]\033[0m \033[1;36m<%s>\033[0m ", name, nick);
 		append_clipped(clip, sizeof(clip), input ? input : "", cols - plen);
 	}
 	else
