@@ -208,8 +208,9 @@ int server_handle_message(t_syschat *syschat, char *srv_message, char *target)
 			case 324: case 329: case 331: case 332: case 333: case 341:
 			case 352: case 366: case 367: case 368:
 			case 401: case 403: case 404: case 405: case 407: case 437:
-			case 441: case 442: case 443: case 474: case 475: case 477:
-			case 482:
+			case 441: case 442: case 443: case 470: case 471: case 473:
+			case 474: case 475: case 476: case 477: case 478: case 482:
+			case 485:
 				target_name = parsed[3];
 				break ;
 			default:

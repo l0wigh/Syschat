@@ -14,6 +14,14 @@ SYNC = [
     b":mock 401 tester zzz_no_such :No such nick\r\n",
 ]
 
+# Every numeric that makes a /join fail must reach the channel tab, otherwise
+# the user sees nothing happen. The list is checked exhaustively so a code
+# missing from the routing switch fails the suite instead of a review.
+JOIN_ERRORS = [403, 404, 405, 470, 471, 473, 474, 475, 476, 477, 478, 485]
+JOIN_ERROR_LINES = [
+    (":mock %d tester #alpha :ERRCODE%d\r\n" % (c, c)).encode() for c in JOIN_ERRORS
+]
+
 
 def serve(srv, ready):
     srv.listen(1)
@@ -38,7 +46,7 @@ def serve(srv, ready):
             elif cmd == "JOIN":
                 conn.sendall(b":tester!u@h JOIN :#alpha\r\n")
                 time.sleep(0.3)
-                for l in SYNC:
+                for l in SYNC + JOIN_ERROR_LINES:
                     conn.sendall(l)
             elif cmd == "PRIVMSG":
                 conn.sendall(b":mock 401 tester zzz_no_such :No such nick\r\n")
@@ -115,6 +123,8 @@ marks["modes labelled"] = "Modes: +nt" in frame
 marks["topic setter labelled"] = "Topic set by alice" in frame
 marks["no top-level target prefix left"] = "#alpha :Le topic" not in frame
 marks["unknown command stays in the server tab"] = "Unknown command" not in frame
+for code in JOIN_ERRORS:
+    marks["join error %d shown in the channel tab" % code] = ("ERRCODE%d" % code) in frame
 
 send("/msg zzz_no_such :rate\n")
 pump(1.5)
