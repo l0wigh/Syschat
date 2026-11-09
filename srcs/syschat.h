@@ -24,7 +24,7 @@
 #include <time.h>
 
 #define BF_SIZE 512
-#define SYSCHAT_QUIT "Syschat 0.4.1-RC1"
+#define SYSCHAT_QUIT "Syschat 0.4.2-RC1"
 #define SYSCHAT_USERINFO "You want that sweet sweet Syschat client ? https://github.com/L0Wigh/syschat"
 
 #define SYSCHAT_MAX_BUFFERS 16
