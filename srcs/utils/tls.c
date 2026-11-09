@@ -144,7 +144,7 @@ static void	tls_reason(t_tls_state *st, int ret, char *err, size_t errlen)
 	(void) st;
 }
 
-int	tls_connect(t_syschat *syschat, char *err, size_t errlen)
+int	tls_connect(t_conn *conn, char *err, size_t errlen)
 {
 	t_tls_state	*st;
 	const char	*const *path;
@@ -173,7 +173,7 @@ int	tls_connect(t_syschat *syschat, char *err, size_t errlen)
 		if (mbedtls_x509_crt_parse_file(&st->ca, *path) == 0)
 			st->ca_loaded = 1;
 	}
-	if (!st->ca_loaded && !syschat->tls_insecure)
+	if (!st->ca_loaded && !conn->tls_insecure)
 	{
 		snprintf(err, errlen, "no CA bundle found (%s), use --insecure",
 			tls_ca_paths[0]);
@@ -187,7 +187,7 @@ int	tls_connect(t_syschat *syschat, char *err, size_t errlen)
 		tls_state_free(st);
 		return (-1);
 	}
-	mbedtls_ssl_conf_authmode(&st->conf, st->ca_loaded && !syschat->tls_insecure
+	mbedtls_ssl_conf_authmode(&st->conf, st->ca_loaded && !conn->tls_insecure
 		? MBEDTLS_SSL_VERIFY_REQUIRED : MBEDTLS_SSL_VERIFY_NONE);
 	if (st->ca_loaded)
 		mbedtls_ssl_conf_ca_chain(&st->conf, &st->ca, NULL);
@@ -198,29 +198,29 @@ int	tls_connect(t_syschat *syschat, char *err, size_t errlen)
 		tls_state_free(st);
 		return (-1);
 	}
-	if ((ret = mbedtls_ssl_set_hostname(&st->ssl, syschat->hostname)) != 0)
+	if ((ret = mbedtls_ssl_set_hostname(&st->ssl, conn->hostname)) != 0)
 	{
 		tls_reason(st, ret, err, errlen);
 		tls_state_free(st);
 		return (-1);
 	}
-	st->bio.fd = syschat->net_socket;
+	st->bio.fd = conn->fd;
 	st->bio.block_ms = TLS_HANDSHAKE_TIMEOUT_MS;
 	mbedtls_ssl_set_bio(&st->ssl, &st->bio, tls_bio_send, tls_bio_recv, NULL);
 	/* Non-blocking from here on: the main loop keeps owning the readiness
 	** checks through poll(), and tls_bio_recv never waits after handshake. */
-	tls_set_blocking(syschat->net_socket, 0);
+	tls_set_blocking(conn->fd, 0);
 
 	while ((ret = mbedtls_ssl_handshake(&st->ssl)) != 0)
 	{
 		if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE)
 			continue ;
 		tls_reason(st, ret, err, errlen);
-		tls_set_blocking(syschat->net_socket, 1);
+		tls_set_blocking(conn->fd, 1);
 		tls_state_free(st);
 		return (-1);
 	}
-	if (mbedtls_ssl_get_verify_result(&st->ssl) != 0 && !syschat->tls_insecure)
+	if (mbedtls_ssl_get_verify_result(&st->ssl) != 0 && !conn->tls_insecure)
 	{
 		uint32_t	flags;
 
@@ -228,22 +228,22 @@ int	tls_connect(t_syschat *syschat, char *err, size_t errlen)
 		mbedtls_x509_crt_verify_info(err, errlen, "", flags);
 		if (err[0] == '\0')
 			snprintf(err, errlen, "certificate verification failed");
-		tls_set_blocking(syschat->net_socket, 1);
+		tls_set_blocking(conn->fd, 1);
 		tls_state_free(st);
 		return (-1);
 	}
 	st->bio.block_ms = 0;
-	syschat->tls_state = st;
-	syschat->tls_active = 1;
+	conn->tls_state = st;
+	conn->tls_active = 1;
 	return (0);
 }
 
-int	tls_pending(t_syschat *syschat)
+int	tls_pending(t_conn *conn)
 {
 	t_tls_state	*st;
 
-	st = syschat->tls_state;
-	if (!st || !syschat->tls_active)
+	st = conn->tls_state;
+	if (!st || !conn->tls_active)
 		return (0);
 	return (mbedtls_ssl_get_bytes_avail(&st->ssl) > 0);
 }
@@ -252,25 +252,26 @@ int	tls_pending(t_syschat *syschat)
 ** A dropped line used to be invisible: every caller ignores the return value,
 ** so a short SSL_write looked exactly like a delivered message.
 */
-static void	tls_report_drop(t_syschat *syschat, int ret)
+static void	tls_report_drop(t_conn *conn, int ret)
 {
 	char	line[192];
 
 	snprintf(line, sizeof(line),
 		"\e[0;31mTLS: message dropped, write failed (mbedTLS -0x%04x)\e[0m", -ret);
-	if (syschat->active >= 0 && syschat->active < syschat->buffer_count)
-		buffers_append(syschat, syschat->active, line);
+	if (conn->owner && conn->owner->active >= 0
+		&& conn->owner->active < conn->owner->buffer_count)
+		buffers_append(conn->owner, conn->owner->active, line);
 	else
 		fprintf(stderr, "%s\n", line);
 }
 
-int	tls_send(t_syschat *syschat, const char *buf, size_t len)
+int	tls_send(t_conn *conn, const char *buf, size_t len)
 {
 	t_tls_state	*st;
 	int			ret;
 	int			saved;
 
-	st = syschat->tls_state;
+	st = conn->tls_state;
 	if (!st)
 		return (-1);
 	saved = st->bio.block_ms;
@@ -281,18 +282,18 @@ int	tls_send(t_syschat *syschat, const char *buf, size_t len)
 	st->bio.block_ms = saved;
 	if (ret < 0)
 	{
-		tls_report_drop(syschat, ret);
+		tls_report_drop(conn, ret);
 		return (-1);
 	}
 	return (ret);
 }
 
-int	tls_recv(t_syschat *syschat, char *buf, size_t len)
+int	tls_recv(t_conn *conn, char *buf, size_t len)
 {
 	t_tls_state	*st;
 	int			ret;
 
-	st = syschat->tls_state;
+	st = conn->tls_state;
 	if (!st)
 		return (-2);
 	ret = mbedtls_ssl_read(&st->ssl, (unsigned char *) buf, len);
@@ -306,31 +307,31 @@ int	tls_recv(t_syschat *syschat, char *buf, size_t len)
 	return (-2);
 }
 
-void	tls_close(t_syschat *syschat)
+void	tls_close(t_conn *conn)
 {
 	t_tls_state	*st;
 
-	st = syschat->tls_state;
-	syschat->tls_state = NULL;
-	syschat->tls_active = 0;
+	st = conn->tls_state;
+	conn->tls_state = NULL;
+	conn->tls_active = 0;
 	if (!st)
 		return ;
-	if (syschat->net_socket >= 0)
+	if (conn->fd >= 0)
 		mbedtls_ssl_close_notify(&st->ssl);
 	tls_state_free(st);
 }
 
-void	tls_summary(t_syschat *syschat, char *buf, size_t len)
+void	tls_summary(t_conn *conn, char *buf, size_t len)
 {
 	t_tls_state	*st;
 
-	st = syschat->tls_state;
-	if (!st || !syschat->tls_active)
+	st = conn->tls_state;
+	if (!st || !conn->tls_active)
 	{
 		snprintf(buf, len, "plaintext, no encryption");
 		return ;
 	}
 	snprintf(buf, len, "%s, %s, cert %s", mbedtls_ssl_get_version(&st->ssl),
 		mbedtls_ssl_get_ciphersuite(&st->ssl),
-		syschat->tls_insecure ? "NOT verified" : "verified");
+		conn->tls_insecure ? "NOT verified" : "verified");
 }

@@ -57,21 +57,39 @@ void error_print(int err)
 
 void error_cleaning(t_syschat *syschat)
 {
+	t_conn	*conn;
+
 	if (!syschat)
 		return;
 	syschat_terminal_restore();
-	syschat->listing = 0;
-	syschat->elist_mask = 0;
-
-	if (syschat->net_socket)
+	/*
+	** Every connection is torn down, not just the first one: a multi-server
+	** session would otherwise leave N-1 sockets and N-1 mbedTLS contexts
+	** alive at exit. fd == -1 is the "no connection" sentinel (fd 0 is a
+	** valid descriptor and used to be mistaken for "nothing to close").
+	*/
+	for (int i = 0; i != syschat->conn_count; i++)
 	{
-		tls_close(syschat);
-		close(syschat->net_socket);
+		conn = &syschat->conns[i];
+		conn->listing = 0;
+		conn->elist_mask = 0;
+		if (conn->fd >= 0)
+		{
+			tls_close(conn);
+			close(conn->fd);
+			conn->fd = -1;
+		}
+		conn->alive = 0;
+		if (conn->label)
+			free(conn->label);
+		if (conn->hostname)
+			free(conn->hostname);
+		if (conn->nickname)
+			free(conn->nickname);
+		conn->label = NULL;
+		conn->hostname = NULL;
+		conn->nickname = NULL;
 	}
-	if (syschat->hostname)
-		free(syschat->hostname);
-	if (syschat->nickname)
-		free(syschat->nickname);
 	buffers_free(syschat);
 }
 

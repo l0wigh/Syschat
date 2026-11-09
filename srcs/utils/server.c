@@ -17,8 +17,10 @@ static void	target_chan(char *target, size_t size, const char *value)
 		*cr = '\0';
 }
 
-void server_handle_ping(t_syschat *syschat, char **parsed, char *srv_message, char *target)
+void server_handle_ping(t_syschat *syschat, t_conn *conn, char **parsed, char *srv_message, char *target)
 {
+	(void) syschat;
+	(void) conn;
 	char		message[BF_SIZE];
 	const char	*token;
 
@@ -33,49 +35,57 @@ void server_handle_ping(t_syschat *syschat, char **parsed, char *srv_message, ch
 	bzero(srv_message, BF_SIZE);
 	bzero(target, SYSCHAT_NAME_LEN);
 	snprintf(message, BF_SIZE, "PONG :%s\r\n", token);
-	net_send(syschat, message, strlen(message));
+	net_send(conn, message, strlen(message));
 }
 
-void server_handle_join(t_syschat *syschat, char **parsed, char *srv_message, char *target)
+void server_handle_join(t_syschat *syschat, t_conn *conn, char **parsed, char *srv_message, char *target)
 {
+	(void) syschat;
+	(void) conn;
 	int	index;
 
 	bzero(srv_message, BF_SIZE);
 	target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
-	if (syschat->nickname && strcasecmp(parsed[0], syschat->nickname) == 0)
+	if (conn->nickname && strcasecmp(parsed[0], conn->nickname) == 0)
 	{
-		index = buffers_join(syschat, target);
+		index = buffers_join_on(syschat, (unsigned) (conn - syschat->conns), target);
 		if (index != -1)
 			syschat->buffers[index].joined = 1;
 	}
 	snprintf(srv_message, BF_SIZE, "-!- %s%s\e[0m just entered", nick_color(parsed[0]), parsed[0]);
 }
 
-void server_handle_quit(t_syschat *syschat, char **parsed, char *srv_message, char *target)
+void server_handle_quit(t_syschat *syschat, t_conn *conn, char **parsed, char *srv_message, char *target)
 {
-	target_chan(target, SYSCHAT_NAME_LEN, syschat->hostname);
+	(void) syschat;
+	(void) conn;
+	target_chan(target, SYSCHAT_NAME_LEN, conn->hostname);
 	bzero(srv_message, BF_SIZE);
 	snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m \e[0;31mdisconnected\e[0m",
-		syschat->hostname, parsed[0]);
+		conn->hostname, parsed[0]);
 }
 
-void server_handle_part(t_syschat *syschat, char **parsed, char *srv_message, char *target)
+void server_handle_part(t_syschat *syschat, t_conn *conn, char **parsed, char *srv_message, char *target)
 {
+	(void) syschat;
+	(void) conn;
 	int	index;
 
 	bzero(srv_message, BF_SIZE);
 	target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
-	if (syschat->nickname && strcasecmp(parsed[0], syschat->nickname) == 0)
+	if (conn->nickname && strcasecmp(parsed[0], conn->nickname) == 0)
 	{
-		index = buffers_find(syschat, target);
+		index = buffers_find_on(syschat, (unsigned) (conn - syschat->conns), target);
 		if (index != -1)
 			syschat->buffers[index].joined = 0;
 	}
 	snprintf(srv_message, BF_SIZE, "-!- %s%s\e[0m just left", nick_color(parsed[0]), parsed[0]);
 }
 
-void server_handle_privmsg(t_syschat *syschat, char **parsed, char *srv_message, char *target)
+void server_handle_privmsg(t_syschat *syschat, t_conn *conn, char **parsed, char *srv_message, char *target)
 {
+	(void) syschat;
+	(void) conn;
 	bzero(srv_message, BF_SIZE);
 	if (parsed[2][0] == '#')
 	{
@@ -89,32 +99,36 @@ void server_handle_privmsg(t_syschat *syschat, char **parsed, char *srv_message,
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[0]);
 		if (parsed[3][0] == 1)
 		{
-			ctcp_handle_request(syschat, parsed);
+			ctcp_handle_request(conn, parsed);
 			snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] Asked for CTCP: \e[0;36m%s\e[0m",
 				parsed[0], parsed[3]);
 			return ;
 		}
 		snprintf(srv_message, BF_SIZE, "<%s%s\e[0m> -> <%s%s\e[0m> %s",
-			nick_color(parsed[0]), parsed[0], nick_color(syschat->nickname),
-			syschat->nickname, parsed[3]);
+			nick_color(parsed[0]), parsed[0], nick_color(conn->nickname),
+			conn->nickname, parsed[3]);
 	}
 }
 
-void server_handle_nick(t_syschat *syschat, char **parsed, char *srv_message, char *target)
+void server_handle_nick(t_syschat *syschat, t_conn *conn, char **parsed, char *srv_message, char *target)
 {
-	target_chan(target, SYSCHAT_NAME_LEN, syschat->hostname);
+	(void) syschat;
+	(void) conn;
+	target_chan(target, SYSCHAT_NAME_LEN, conn->hostname);
 	bzero(srv_message, BF_SIZE);
 	snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] \e[0;31m%s\e[0m is now \e[0;32m%s\e[0m",
-		syschat->hostname, parsed[0], parsed[2]);
-	if (syschat->nickname && strcasecmp(parsed[0], syschat->nickname) == 0)
+		conn->hostname, parsed[0], parsed[2]);
+	if (conn->nickname && strcasecmp(parsed[0], conn->nickname) == 0)
 	{
-		free(syschat->nickname);
-		syschat->nickname = strdup(parsed[2]);
+		free(conn->nickname);
+		conn->nickname = strdup(parsed[2]);
 	}
 }
 
-void server_handle_kick(t_syschat *syschat, char **parsed, char *srv_message, char *target)
+void server_handle_kick(t_syschat *syschat, t_conn *conn, char **parsed, char *srv_message, char *target)
 {
+	(void) syschat;
+	(void) conn;
 	(void) syschat;
 	bzero(srv_message, BF_SIZE);
 	target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
@@ -122,29 +136,33 @@ void server_handle_kick(t_syschat *syschat, char **parsed, char *srv_message, ch
 		target, parsed[0], parsed[3]);
 }
 
-void server_handle_mode(t_syschat *syschat, char **parsed, char *srv_message, char *target)
+void server_handle_mode(t_syschat *syschat, t_conn *conn, char **parsed, char *srv_message, char *target)
 {
+	(void) syschat;
+	(void) conn;
 	bzero(srv_message, BF_SIZE);
 	if (parsed[2][0] != '#')
-		target_chan(target, SYSCHAT_NAME_LEN, syschat->hostname);
+		target_chan(target, SYSCHAT_NAME_LEN, conn->hostname);
 	else
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
 	snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m changed \e[0;35m%s\e[0m modes to \e[0;36m%s\e[0m",
 		target, parsed[0], target, parsed[3]);
 }
 
-void server_handle_notice(t_syschat *syschat, char **parsed, char *srv_message, char *target)
+void server_handle_notice(t_syschat *syschat, t_conn *conn, char **parsed, char *srv_message, char *target)
 {
+	(void) syschat;
+	(void) conn;
 	(void) syschat;
 	bzero(srv_message, BF_SIZE);
 	if (parsed[2][0] == '#')
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
-	else if (parsed[2][0] == '*' || (syschat->nickname && strcasecmp(parsed[2], syschat->nickname) == 0))
-		target_chan(target, SYSCHAT_NAME_LEN, syschat->hostname);
+	else if (parsed[2][0] == '*' || (conn->nickname && strcasecmp(parsed[2], conn->nickname) == 0))
+		target_chan(target, SYSCHAT_NAME_LEN, conn->hostname);
 	else
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[0]);
-	if (strcasecmp(target, syschat->nickname) == 0)
-		target_chan(target, SYSCHAT_NAME_LEN, syschat->hostname);
+	if (strcasecmp(target, conn->nickname) == 0)
+		target_chan(target, SYSCHAT_NAME_LEN, conn->hostname);
 	if (parsed[3][0] == 1)
 		snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] CTCP answer: \e[0;36m%s\e[0m",
 			parsed[0], parsed[3]);
@@ -161,13 +179,15 @@ void server_handle_notice(t_syschat *syschat, char **parsed, char *srv_message, 
 ** Checked before the generic routing: 322 names its channel in param 3, so
 ** otherwise a listed channel we already joined would land in its own tab.
 */
-static int	numeric_listing(t_syschat *syschat, char **parsed, char *srv_message,
+static int	numeric_listing(t_syschat *syschat, t_conn *conn, char **parsed, char *srv_message,
 	char *target, int code)
 {
 	int	shown;
 	int	width;
 
-	if (!syschat->listing || (code != 321 && code != 322 && code != 323))
+	(void) syschat;
+
+	if (!conn->listing || (code != 321 && code != 322 && code != 323))
 		return (-1);
 	target_chan(target, SYSCHAT_NAME_LEN, LIST_BUFFER);
 	if (code == 321)
@@ -175,12 +195,12 @@ static int	numeric_listing(t_syschat *syschat, char **parsed, char *srv_message,
 	if (code == 323)
 	{
 		snprintf(srv_message, BF_SIZE, "\e[0;37m-- %d channel(s) listed\e[0m",
-			syschat->list_received);
-		syschat->listing = 0;
+			conn->list_received);
+		conn->listing = 0;
 		return (1);
 	}
 	shown = 1;
-	if (syschat->list_filter[0] && !strcasestr(parsed[3], syschat->list_filter))
+	if (conn->list_filter[0] && !strcasestr(parsed[3], conn->list_filter))
 		shown = 0;
 	if (!shown)
 		return (0);
@@ -197,7 +217,7 @@ static int	numeric_listing(t_syschat *syschat, char **parsed, char *srv_message,
 	else
 		snprintf(srv_message, BF_SIZE, "\e[0;37m%-*.*s %4s\e[0m",
 			width, width, parsed[3], parsed[4]);
-	syschat->list_received++;
+	conn->list_received++;
 	return (1);
 }
 
@@ -220,7 +240,7 @@ static int is_numeric(const char *token)
 ** Returns 1 when `srv_message` holds something to display, 0 otherwise.
 ** `target` receives the buffer name the message belongs to.
 */
-int server_handle_message(t_syschat *syschat, char *srv_message, char *target)
+int server_handle_message(t_syschat *syschat, t_conn *conn, char *srv_message, char *target)
 {
 	char		**parsed;
 	int			displayed;
@@ -249,9 +269,9 @@ int server_handle_message(t_syschat *syschat, char *srv_message, char *target)
 			/* ISUPPORT: several 005 lines per session, scan them all. */
 			for (int i = 3; i != 16; i++)
 				if (strncmp(parsed[i], "ELIST=", 6) == 0 && strchr(parsed[i] + 6, 'C'))
-					syschat->elist_mask = 1;
+					conn->elist_mask = 1;
 		}
-		displayed = numeric_listing(syschat, parsed, srv_message, target, code);
+		displayed = numeric_listing(syschat, conn, parsed, srv_message, target, code);
 		if (displayed == -1)
 		{
 			const char	*target_name;
@@ -278,8 +298,8 @@ int server_handle_message(t_syschat *syschat, char *srv_message, char *target)
 				default:
 					break ;
 			}
-			target_chan(target, SYSCHAT_NAME_LEN, syschat->hostname);
-			if (target_name && buffers_find(syschat, target_name) != -1)
+			target_chan(target, SYSCHAT_NAME_LEN, conn->hostname);
+			if (target_name && buffers_find_on(syschat, (unsigned) (conn - syschat->conns), target_name) != -1)
 				target_chan(target, SYSCHAT_NAME_LEN, target_name);
 			text_index = 3;
 			for (int i = 15; i >= 3; i--)
@@ -312,23 +332,23 @@ int server_handle_message(t_syschat *syschat, char *srv_message, char *target)
 			displayed = 0;
 	}
 	else if (strcmp(parsed[0], "PING") == 0 || strcmp(parsed[1], "PING") == 0)
-		server_handle_ping(syschat, parsed, srv_message, target);
+		server_handle_ping(syschat, conn, parsed, srv_message, target);
 	else if (strcmp(parsed[1], "JOIN") == 0)
-		server_handle_join(syschat, parsed, srv_message, target);
+		server_handle_join(syschat, conn, parsed, srv_message, target);
 	else if (strcmp(parsed[1], "QUIT") == 0)
-		server_handle_quit(syschat, parsed, srv_message, target);
+		server_handle_quit(syschat, conn, parsed, srv_message, target);
 	else if (strcmp(parsed[1], "PART") == 0)
-		server_handle_part(syschat, parsed, srv_message, target);
+		server_handle_part(syschat, conn, parsed, srv_message, target);
 	else if (strcmp(parsed[1], "PRIVMSG") == 0)
-		server_handle_privmsg(syschat, parsed, srv_message, target);
+		server_handle_privmsg(syschat, conn, parsed, srv_message, target);
 	else if (strcmp(parsed[1], "NICK") == 0)
-		server_handle_nick(syschat, parsed, srv_message, target);
+		server_handle_nick(syschat, conn, parsed, srv_message, target);
 	else if (strcmp(parsed[1], "KICK") == 0)
-		server_handle_kick(syschat, parsed, srv_message, target);
+		server_handle_kick(syschat, conn, parsed, srv_message, target);
 	else if (strcmp(parsed[1], "MODE") == 0)
-		server_handle_mode(syschat, parsed, srv_message, target);
+		server_handle_mode(syschat, conn, parsed, srv_message, target);
 	else if (strcmp(parsed[1], "NOTICE") == 0)
-		server_handle_notice(syschat, parsed, srv_message, target);
+		server_handle_notice(syschat, conn, parsed, srv_message, target);
 	if (srv_message[0] != '\0' && strcmp(parsed[0], "PING") != 0
 		&& strcmp(parsed[1], "PING") != 0)
 		displayed = 1;

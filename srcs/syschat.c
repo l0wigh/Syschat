@@ -43,6 +43,132 @@ static int input_len = 0;
 // TODO: Use write instead of printf when it's possible
 
 /*
+** Process wide TLS policy, decided from the command line and the
+** environment. It is applied to the connection given on the command line
+** AND to every server added later with /connect: the rule must not change
+** depending on when the connection was opened.
+*/
+static int	policy_tls;
+static int	policy_no_tls;
+static int	policy_strict;
+static int	policy_insecure;
+
+void	syschat_apply_tls_policy(t_conn *conn)
+{
+	char	*env;
+
+	conn->tls = (conn->port == 6697);
+	if ((env = getenv("SYSCHAT_TLS")) != NULL && env[0] != '\0')
+		conn->tls = !strcmp(env, "1") || !strcmp(env, "true") || !strcmp(env, "yes");
+	conn->tls_insecure = policy_insecure;
+	if ((env = getenv("SYSCHAT_TLS_NO_VERIFY")) != NULL
+		&& (!strcmp(env, "1") || !strcmp(env, "true") || !strcmp(env, "yes")))
+		conn->tls_insecure = 1;
+	if (policy_tls)
+		conn->tls = 1;
+	if (policy_no_tls)
+		conn->tls = 0;
+	/*
+	** Strict = "never plaintext". It overrides --no-tls (refused at parse
+	** time) and turns a failed handshake into a hard error instead of a
+	** silent fallback, for this connection like for the first one.
+	*/
+	if (policy_strict)
+	{
+		conn->tls_required = 1;
+		conn->tls = 1;
+	}
+	if (conn->tls_insecure && !policy_no_tls)
+		conn->tls = 1;
+}
+
+/*
+** Claims a connection slot. Slots are never moved: a client-side id is the
+** index in syschat->conns[] and buffers store it forever.
+*/
+static int	syschat_conn_slot(t_syschat *syschat)
+{
+	int	i;
+
+	for (i = 0; i != syschat->conn_count; i++)
+		if (syschat->conns[i].fd < 0 && !syschat->conns[i].alive
+			&& !syschat->conns[i].hostname)
+			return (i);
+	if (syschat->conn_count >= SYSCHAT_MAX_SERVERS)
+		return (-1);
+	return (syschat->conn_count++);
+}
+
+int	syschat_conn_add(t_syschat *syschat, const char *label, const char *host,
+	const char *nickname, int port)
+{
+	t_conn	*conn;
+	int		id;
+
+	id = syschat_conn_slot(syschat);
+	if (id < 0)
+		return (-1);
+	conn = &syschat->conns[id];
+	bzero(conn, sizeof(t_conn));
+	conn->fd = -1;
+	conn->alive = 1;
+	conn->generation++;
+	conn->owner = syschat;
+	conn->label = strdup(label);
+	conn->hostname = strdup(host);
+	conn->nickname = strdup(nickname);
+	conn->port = port;
+	if (!conn->label || !conn->hostname || !conn->nickname)
+	{
+		free(conn->label);
+		free(conn->hostname);
+		free(conn->nickname);
+		conn->label = conn->hostname = conn->nickname = NULL;
+		conn->alive = 0;
+		return (-1);
+	}
+	syschat_apply_tls_policy(conn);
+	return (id);
+}
+
+void	syschat_conn_close(t_syschat *syschat, int id)
+{
+	t_conn	*conn;
+	int		alive;
+
+	if (!syschat || id < 0 || id >= syschat->conn_count)
+		return ;
+	conn = &syschat->conns[id];
+	if (!conn->alive)
+		return ;
+	conn->alive = 0;
+	if (conn->fd >= 0)
+	{
+		tls_close(conn);
+		close(conn->fd);
+		conn->fd = -1;
+	}
+	free(conn->label);
+	free(conn->hostname);
+	free(conn->nickname);
+	conn->label = NULL;
+	conn->hostname = NULL;
+	conn->nickname = NULL;
+	conn->net_len = 0;
+	conn->listing = 0;
+	conn->elist_mask = 0;
+	buffers_leave_server(syschat, (unsigned) id);
+	alive = 0;
+	for (int i = 0; i != syschat->conn_count; i++)
+		if (syschat->conns[i].alive)
+			alive++;
+	/* The client used to exit when its only server hung up: keep that,
+	** but a dead server among several must not close the others. */
+	if (!alive)
+		syschat->running = 0;
+}
+
+/*
 ** Flags are recognised anywhere on the command line, positionals keep their
 ** historic order (<hostname> <nickname> [port]) so every documented command
 ** still works unchanged. TLS is never on by default on 6667: it is enabled
@@ -51,36 +177,36 @@ static int input_len = 0;
 void syschat_load_config(char **argv, int argc)
 {
 	char	*positional[3];
-	char	*env;
 	int		i;
 	int		pos;
-	int		force_tls;
-	int		no_tls;
-	int		strict;
+	int		port;
+	t_conn	*conn;
 
 	bzero(&syschat, sizeof(t_syschat));
+	for (i = 0; i != SYSCHAT_MAX_SERVERS; i++)
+		syschat.conns[i].fd = -1;
 	bzero(positional, sizeof(positional));
 	pos = 0;
-	force_tls = 0;
-	no_tls = 0;
-	strict = 0;
+	policy_tls = 0;
+	policy_no_tls = 0;
+	policy_strict = 0;
+	policy_insecure = 0;
 	for (i = 1; i < argc; i++)
 	{
 		if (!strcmp(argv[i], "--tls") || !strcmp(argv[i], "-tls"))
-			force_tls = 1;
+			policy_tls = 1;
 		else if (!strcmp(argv[i], "--no-tls") || !strcmp(argv[i], "-no-tls"))
-			no_tls = 1;
+			policy_no_tls = 1;
 		else if (!strcmp(argv[i], "--insecure") || !strcmp(argv[i], "-insecure"))
-			syschat.tls_insecure = 1;
+			policy_insecure = 1;
 		else if (!strcmp(argv[i], "--tls-required") || !strcmp(argv[i], "-tls-required"))
-			strict = 1;
+			policy_strict = 1;
 		else if (pos < 3)
 			positional[pos++] = argv[i];
 	}
 	if (pos < 2)
 		error_exit(NULL, 1);
-	syschat.hostname = strdup(positional[0]);
-	syschat.nickname = strdup(positional[1]);
+	port = 6667;
 	if (pos > 2)
 	{
 		char	*end;
@@ -90,55 +216,46 @@ void syschat_load_config(char **argv, int argc)
 		parsed = strtol(positional[2], &end, 10);
 		if (end == positional[2] || *end != '\0' || parsed < 1 || parsed > 65535)
 			error_exit(NULL, 9);
-		syschat.port = (int) parsed;
+		port = (int) parsed;
 	}
-	else
-		syschat.port = 6667;
-	syschat.tls = (syschat.port == 6697);
-	if ((env = getenv("SYSCHAT_TLS")) != NULL && env[0] != '\0')
-		syschat.tls = !strcmp(env, "1") || !strcmp(env, "true") || !strcmp(env, "yes");
-	if ((env = getenv("SYSCHAT_TLS_NO_VERIFY")) != NULL
-		&& (!strcmp(env, "1") || !strcmp(env, "true") || !strcmp(env, "yes")))
-		syschat.tls_insecure = 1;
-	if ((env = getenv("SYSCHAT_TLS_STRICT")) != NULL
-		&& (!strcmp(env, "1") || !strcmp(env, "true") || !strcmp(env, "yes")))
-		strict = 1;
-	if (force_tls)
-		syschat.tls = 1;
-	if (no_tls)
-		syschat.tls = 0;
-	/*
-	** Strict = "never plaintext". It is orthogonal to --insecure (which is
-	** about verification, not encryption), and it contradicts --no-tls.
-	*/
-	if (strict)
-	{
-		if (no_tls)
-			error_exit(NULL, 11);
-		syschat.tls_required = 1;
-		syschat.tls = 1;
-	}
-	if (syschat.tls_insecure && !no_tls)
-		syschat.tls = 1;
+	if ((getenv("SYSCHAT_TLS_STRICT") != NULL)
+		&& (!strcmp(getenv("SYSCHAT_TLS_STRICT"), "1")
+		|| !strcmp(getenv("SYSCHAT_TLS_STRICT"), "true")
+		|| !strcmp(getenv("SYSCHAT_TLS_STRICT"), "yes")))
+		policy_strict = 1;
+	if (policy_strict && policy_no_tls)
+		error_exit(NULL, 11);
+	syschat.conn_count = 1;
+	conn = &syschat.conns[0];
+	conn->fd = -1;
+	conn->alive = 1;
+	conn->generation = 1;
+	conn->owner = &syschat;
+	conn->label = strdup(positional[0]);
+	conn->hostname = strdup(positional[0]);
+	conn->nickname = strdup(positional[1]);
+	conn->port = port;
+	syschat_apply_tls_policy(conn);
+	syschat.current = 0;
 	syschat.active = -1;
-	buffers_new(&syschat, syschat.hostname);
+	buffers_new_on(&syschat, 0, conn->label);
 	buffers_switch(&syschat, 0);
 }
 
-void syschat_say_hello(void)
+void syschat_say_hello(t_conn *conn)
 {
 	char message[BF_SIZE];
 
-	net_send(&syschat, "PASS none\r\n", 11);
+	net_send(conn, "PASS none\r\n", 11);
 
 	bzero(message, BF_SIZE);
-	snprintf(message, BF_SIZE, "NICK %s\r\n", syschat.nickname);
-	net_send(&syschat, message, strlen(message));
+	snprintf(message, BF_SIZE, "NICK %s\r\n", conn->nickname);
+	net_send(conn, message, strlen(message));
 
 	bzero(message, BF_SIZE);
-	snprintf(message, BF_SIZE, "USER %s %s %s %s\r\n", syschat.nickname, syschat.nickname,
-		syschat.nickname, syschat.nickname);
-	net_send(&syschat, message, strlen(message));
+	snprintf(message, BF_SIZE, "USER %s %s %s %s\r\n", conn->nickname, conn->nickname,
+		conn->nickname, conn->nickname);
+	net_send(conn, message, strlen(message));
 }
 
 void syschat_echo(char *text)
@@ -158,7 +275,14 @@ static void syschat_send_line(char *input)
 	int			truncated;
 
 	name = buffers_active_name(&syschat);
-	if (!name || syschat.active <= 0)
+	/*
+	** The old guard was `active <= 0`, i.e. "index 0 is the server window".
+	** That invariant dies with a second server: its console window sits at
+	** an index > 0 and a PRIVMSG to irc.example.org would be sent. The kind
+	** of the buffer is what decides, not its position.
+	*/
+	if (!name || buffers_active_kind(&syschat) == BUF_SERVER
+		|| buffers_active_kind(&syschat) == BUF_LIST)
 	{
 		syschat_echo("\e[0;31mNot in a channel or a private message. Use /join <channel>\e[0m");
 		return ;
@@ -169,10 +293,11 @@ static void syschat_send_line(char *input)
 	bzero(line, sizeof(line));
 	if (name[0] == '#')
 		snprintf(line, sizeof(line), "<%s%s\e[0m> %s",
-			nick_color(syschat.nickname), syschat.nickname, sent);
+			nick_color(SYSC(&syschat)->nickname), SYSC(&syschat)->nickname, sent);
 	else
 		snprintf(line, sizeof(line), "<%s%s\e[0m> -> <%s%s\e[0m> %s",
-			nick_color(syschat.nickname), syschat.nickname, nick_color(name), name, sent);
+			nick_color(SYSC(&syschat)->nickname), SYSC(&syschat)->nickname,
+			nick_color(name), name, sent);
 	buffers_append(&syschat, syschat.active, line);
 	if (truncated)
 	{
@@ -264,77 +389,111 @@ void syschat_handle_input(char *buffer, int size)
 }
 
 /*
-** The socket is drained into a persistent line accumulator: a chunk can
-** hold several IRC lines, or half of one. Nothing is dropped.
+** The socket is drained into a per-connection accumulator: a chunk can
+** hold several IRC lines, or half of one. Sharing this buffer between
+** sockets would glue half a line from A to a line from B -- plausible text,
+** wrong line, and no error anywhere.
 */
-void syschat_read_network(void)
+void syschat_read_network(t_conn *conn)
 {
-	static char	net[NET_BUFFER_SIZE];
-	static int	net_len = 0;
+	t_syschat	*syschat;
 	char		srv[BF_SIZE];
 	char		target[SYSCHAT_NAME_LEN];
 	char		*end;
 	char		chunk[2048];
+	char		label[SYSCHAT_NAME_LEN];
+	unsigned	sid;
 	int			received;
 	int			line_len;
 	int			index;
 
+	if (!conn || !conn->alive || conn->fd < 0)
+		return ;
+	syschat = conn->owner;
+	sid = (unsigned) (conn - syschat->conns);
+	bzero(label, sizeof(label));
+	snprintf(label, sizeof(label), "%s", conn->label ? conn->label : "server");
 	bzero(chunk, sizeof(chunk));
-	received = net_recv(&syschat, chunk, sizeof(chunk) - 1);
+	received = net_recv(conn, chunk, sizeof(chunk) - 1);
 	if (received == -1)
 		return ;
-	if (received <= 0)
+	if (received == 0 || received == -2)
 	{
-		syschat.running = 0;
+		/* One server lost: its buffers go, the others keep running. */
+		char	line[BF_SIZE];
+
+		snprintf(line, sizeof(line), "\e[0;31m-- %s disconnected\e[0m", label);
+		if (syschat->active >= 0)
+			buffers_append(syschat, syschat->active, line);
+		syschat_conn_close(syschat, (int) sid);
 		return ;
 	}
-	if (received > NET_BUFFER_SIZE - 1 - net_len)
-		net_len = 0;
-	memcpy(net + net_len, chunk, received);
-	net_len += received;
-	net[net_len] = '\0';
-	while ((end = strchr(net, '\n')) != NULL)
+	if (received > SYSCHAT_NET_BUFFER - 1 - conn->net_len)
+		conn->net_len = 0;
+	memcpy(conn->net + conn->net_len, chunk, received);
+	conn->net_len += received;
+	conn->net[conn->net_len] = '\0';
+	while ((end = strchr(conn->net, '\n')) != NULL)
 	{
-		line_len = end - net;
-		while (line_len > 0 && (net[line_len - 1] == '\r' || net[line_len - 1] == '\0'))
+		line_len = end - conn->net;
+		while (line_len > 0 && (conn->net[line_len - 1] == '\r' || conn->net[line_len - 1] == '\0'))
 			line_len--;
 		if (line_len > 0)
 		{
 			bzero(srv, sizeof(srv));
-			snprintf(srv, sizeof(srv), "%.*s", line_len, net);
+			snprintf(srv, sizeof(srv), "%.*s", line_len, conn->net);
 			bzero(target, SYSCHAT_NAME_LEN);
-			if (server_handle_message(&syschat, srv, target))
+			if (server_handle_message(syschat, conn, srv, target))
 			{
 				if (target[0] == '\0')
-					snprintf(target, SYSCHAT_NAME_LEN, "%s", syschat.hostname);
-				index = buffers_route(&syschat, target);
-				buffers_append(&syschat, index, srv);
+					snprintf(target, SYSCHAT_NAME_LEN, "%s", conn->hostname);
+				index = buffers_route_on(syschat, sid, target);
+				buffers_append(syschat, index, srv);
 			}
 		}
-		memmove(net, end + 1, net_len - (end + 1 - net) + 1);
-		net_len -= (end + 1 - net);
+		memmove(conn->net, end + 1, conn->net_len - (int) (end + 1 - conn->net) + 1);
+		conn->net_len -= (int) (end + 1 - conn->net);
 	}
-	screen_draw(&syschat, input);
+	screen_draw(syschat, input);
 }
 
 void syschat_loop(void)
 {
 	char			buffer[512];
-	struct pollfd	fds[2];
+	struct pollfd	*fds;
+	int				*map;
 	int				ret;
+	int				n;
+	int				pending;
+	int				i;
 
-	fds[0].fd = STDIN_FILENO;
-	fds[0].events = POLLIN;
-	fds[1].fd = syschat.net_socket;
-	fds[1].events = POLLIN;
+	fds = calloc(SYSCHAT_MAX_SERVERS + 1, sizeof(struct pollfd));
+	map = calloc(SYSCHAT_MAX_SERVERS + 1, sizeof(int));
+	if (!fds || !map)
+		return ;
 	syschat.running = 1;
 	while (syschat.running)
 	{
+		n = 1;
+		fds[0].fd = STDIN_FILENO;
+		fds[0].events = POLLIN;
 		fds[0].revents = 0;
-		fds[1].revents = 0;
-		/* With TLS a record can hold more bytes than one chunk, so the
-		** socket itself may stay silent while decrypted data is waiting. */
-		ret = poll(fds, 2, net_pending(&syschat) ? 0 : 500);
+		pending = 0;
+		for (i = 0; i != syschat.conn_count; i++)
+		{
+			if (!syschat.conns[i].alive || syschat.conns[i].fd < 0)
+				continue ;
+			/* With TLS a record can hold more bytes than one chunk, so
+			** any socket may keep decrypted data while staying silent. */
+			if (net_pending(&syschat.conns[i]))
+				pending = 1;
+			fds[n].fd = syschat.conns[i].fd;
+			fds[n].events = POLLIN;
+			fds[n].revents = 0;
+			map[n] = i;
+			n++;
+		}
+		ret = poll(fds, n, pending ? 0 : 500);
 		if (ret < 0)
 			continue ;
 		if (fds[0].revents & POLLIN)
@@ -343,19 +502,31 @@ void syschat_loop(void)
 			if (ret > 0)
 				syschat_handle_input(buffer, ret);
 		}
-		if (net_pending(&syschat) || (fds[1].revents & (POLLIN | POLLHUP | POLLERR)))
-			syschat_read_network();
-		if (syschat.listing && time(NULL) - syschat.listing_since >= 5)
+		for (i = 1; i < n; i++)
+			if (fds[i].revents & (POLLIN | POLLHUP | POLLERR))
+				syschat_read_network(&syschat.conns[map[i]]);
+		for (i = 0; i != syschat.conn_count; i++)
 		{
-			int index = buffers_find(&syschat, "Liste");
+			t_conn	*conn = &syschat.conns[i];
 
-			syschat.listing = 0;
-			if (index != -1)
-				buffers_append(&syschat, index,
-					"\e[0;31m-- listing stopped after 5s, server sent nothing else\e[0m");
-			screen_draw(&syschat, input);
+			if (!conn->alive || conn->fd < 0)
+				continue ;
+			if (net_pending(conn))
+				syschat_read_network(conn);
+			if (conn->listing && time(NULL) - conn->listing_since >= 5)
+			{
+				int index = buffers_find_on(&syschat, (unsigned) i, "Liste");
+
+				conn->listing = 0;
+				if (index != -1)
+					buffers_append(&syschat, index,
+						"\e[0;31m-- listing stopped after 5s, server sent nothing else\e[0m");
+				screen_draw(&syschat, input);
+			}
 		}
 	}
+	free(fds);
+	free(map);
 }
 
 int main(int argc, char **argv)
@@ -370,14 +541,14 @@ int main(int argc, char **argv)
 
 	syschat_terminal_raw();
 
-	network_connect_server(&syschat);
-	syschat_say_hello();
+	network_connect_server(&syschat, &syschat.conns[0], 1);
+	syschat_say_hello(&syschat.conns[0]);
 
 	{
 		char	banner[256];
 		char	info[160];
 
-		tls_summary(&syschat, info, sizeof(info));
+		tls_summary(&syschat.conns[0], info, sizeof(info));
 		snprintf(banner, sizeof(banner),
 			"Connected (%s). /join #channel to start, Tab / Shift-Tab to switch, /? for help.",
 			info);

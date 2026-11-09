@@ -2,7 +2,8 @@
 #include <time.h>
 
 /*
-** Buffers are matched case-insensitively, like IRC channel names.
+** Buffers are matched case-insensitively, like IRC channel names, and the
+** key is (server_id, name) so two servers can both hold "#chan".
 */
 /*
 ** Five period-accurate accents, no blue: the body text stays default so a
@@ -39,21 +40,54 @@ const char *nick_color(const char *nick)
 	return (NICK_COLORS[hash % NICK_COLOR_COUNT]);
 }
 
-int buffers_find(t_syschat *syschat, const char *name)
+static const char *server_label(t_syschat *syschat, unsigned server_id)
+{
+	if (server_id < (unsigned) syschat->conn_count && syschat->conns[server_id].label)
+		return (syschat->conns[server_id].label);
+	return ("?");
+}
+
+static int buffer_kind_of(t_syschat *syschat, unsigned server_id, const char *name)
+{
+	if (!strcasecmp(name, server_label(syschat, server_id)))
+		return (BUF_SERVER);
+	if (name[0] == '#')
+		return (BUF_CHANNEL);
+	if (!strcasecmp(name, "Liste"))
+		return (BUF_LIST);
+	return (BUF_PRIVATE);
+}
+
+int buffers_find_on(t_syschat *syschat, unsigned server_id, const char *name)
 {
 	if (!syschat || !name)
 		return (-1);
 	for (int i = 0; i != syschat->buffer_count; i++)
-		if (syschat->buffers[i].name && strcasecmp(syschat->buffers[i].name, name) == 0)
+		if (syschat->buffers[i].server_id == server_id && syschat->buffers[i].name
+			&& strcasecmp(syschat->buffers[i].name, name) == 0)
 			return (i);
 	return (-1);
 }
 
-int buffers_new(t_syschat *syschat, const char *name)
+int buffers_find(t_syschat *syschat, const char *name)
+{
+	if (!syschat)
+		return (-1);
+	return (buffers_find_on(syschat, (unsigned) syschat->current, name));
+}
+
+int buffers_new_on(t_syschat *syschat, unsigned server_id, const char *name)
 {
 	t_buffer	*buffer;
 
 	if (!syschat || !name || name[0] == '\0')
+		return (-1);
+	/* A buffer can never belong to a server slot that does not exist: a
+	** late PART after /disconnect must not resurrect an orphan tab. */
+	if (server_id >= (unsigned) syschat->conn_count)
+		return (-1);
+	if (syschat->conn_count > (int) server_id && !syschat->conns[server_id].alive
+		&& syschat->conns[server_id].hostname)
 		return (-1);
 	if (syschat->buffer_count >= SYSCHAT_MAX_BUFFERS)
 		return (-1);
@@ -62,6 +96,8 @@ int buffers_new(t_syschat *syschat, const char *name)
 	buffer->name = strdup(name);
 	if (!buffer->name)
 		return (-1);
+	buffer->server_id = server_id;
+	buffer->kind = buffer_kind_of(syschat, server_id, name);
 	buffer->head = 0;
 	buffer->count = 0;
 	buffer->unread = 0;
@@ -69,37 +105,61 @@ int buffers_new(t_syschat *syschat, const char *name)
 	syschat->buffer_count++;
 	if (syschat->active < 0)
 		syschat->active = syschat->buffer_count - 1;
+	buffers_relabel(syschat);
 	return (syschat->buffer_count - 1);
 }
 
-int buffers_join(t_syschat *syschat, const char *name)
+int buffers_new(t_syschat *syschat, const char *name)
+{
+	if (!syschat)
+		return (-1);
+	return (buffers_new_on(syschat, (unsigned) syschat->current, name));
+}
+
+int buffers_join_on(t_syschat *syschat, unsigned server_id, const char *name)
 {
 	int	index;
 
-	index = buffers_find(syschat, name);
+	index = buffers_find_on(syschat, server_id, name);
 	if (index == -1)
-		index = buffers_new(syschat, name);
+		index = buffers_new_on(syschat, server_id, name);
 	if (index == -1)
 		return (-1);
 	syschat->buffers[index].joined = 1;
 	return (index);
 }
 
-int buffers_leave(t_syschat *syschat, const char *name)
+int buffers_join(t_syschat *syschat, const char *name)
 {
-	t_buffer	*buffer;
-	int			index;
-	int			i;
-
-	index = buffers_find(syschat, name);
-	if (index == -1)
+	if (!syschat)
 		return (-1);
-	buffer = &syschat->buffers[index];
+	return (buffers_join_on(syschat, (unsigned) syschat->current, name));
+}
+
+/* Frees the payload of one buffer; the slot is left zeroed by the caller. */
+static void	buffer_dispose(t_buffer *buffer)
+{
+	int	i;
+
 	if (buffer->name)
 		free(buffer->name);
+	buffer->name = NULL;
 	for (i = 0; i != SYSCHAT_HISTORY; i++)
 		if (buffer->lines[i])
 			free(buffer->lines[i]);
+}
+
+int buffers_leave_on(t_syschat *syschat, unsigned server_id, const char *name)
+{
+	t_buffer	*buffer;
+	int		index;
+	int		i;
+
+	index = buffers_find_on(syschat, server_id, name);
+	if (index == -1)
+		return (-1);
+	buffer = &syschat->buffers[index];
+	buffer_dispose(buffer);
 	for (i = index; i + 1 < syschat->buffer_count; i++)
 		syschat->buffers[i] = syschat->buffers[i + 1];
 	syschat->buffer_count--;
@@ -110,23 +170,114 @@ int buffers_leave(t_syschat *syschat, const char *name)
 		syschat->active = syschat->buffer_count - 1;
 	else if (syschat->active > index)
 		syschat->active--;
+	if (syschat->active >= 0)
+		syschat->current = syschat->buffers[syschat->active].server_id;
+	buffers_relabel(syschat);
 	return (0);
+}
+
+int buffers_leave(t_syschat *syschat, const char *name)
+{
+	if (!syschat)
+		return (-1);
+	return (buffers_leave_on(syschat, (unsigned) syschat->current, name));
+}
+
+/*
+** One pass, no index renumbering of the survivors: closing a server must
+** not shuffle server_id values around (server slots are stable).
+*/
+void buffers_leave_server(t_syschat *syschat, unsigned server_id)
+{
+	int	dst;
+	int	active;
+	int	i;
+
+	if (!syschat)
+		return ;
+	dst = 0;
+	active = -1;
+	for (i = 0; i != syschat->buffer_count; i++)
+	{
+		if (syschat->buffers[i].server_id == server_id)
+		{
+			buffer_dispose(&syschat->buffers[i]);
+			continue ;
+		}
+		if (i == syschat->active)
+			active = dst;
+		if (dst != i)
+			syschat->buffers[dst] = syschat->buffers[i];
+		dst++;
+	}
+	for (i = dst; i != syschat->buffer_count; i++)
+		bzero(&syschat->buffers[i], sizeof(t_buffer));
+	syschat->buffer_count = dst;
+	if (active >= 0)
+		syschat->active = active;
+	if (syschat->buffer_count == 0)
+		syschat->active = -1;
+	else if (syschat->active < 0 || syschat->active >= syschat->buffer_count)
+		syschat->active = syschat->buffer_count - 1;
+	if (syschat->active >= 0)
+		syschat->current = syschat->buffers[syschat->active].server_id;
+	buffers_relabel(syschat);
+}
+
+/*
+** The tab bar cannot print " #chan  #chan " and pretend the user can tell
+** them apart: a name that exists on more than one server is prefixed with
+** its server label.
+*/
+void buffers_relabel(t_syschat *syschat)
+{
+	int	i;
+	int	j;
+	int	dupe;
+
+	if (!syschat)
+		return ;
+	for (i = 0; i != syschat->buffer_count; i++)
+	{
+		dupe = 0;
+		for (j = 0; j != syschat->buffer_count && !dupe; j++)
+			if (j != i && syschat->buffers[j].server_id != syschat->buffers[i].server_id
+				&& syschat->buffers[j].name
+				&& !strcasecmp(syschat->buffers[j].name, syschat->buffers[i].name))
+				dupe = 1;
+		if (dupe)
+			snprintf(syschat->buffers[i].label, sizeof(syschat->buffers[i].label),
+				"%s/%s", server_label(syschat, syschat->buffers[i].server_id),
+				syschat->buffers[i].name);
+		else
+			snprintf(syschat->buffers[i].label, sizeof(syschat->buffers[i].label),
+				"%s", syschat->buffers[i].name);
+	}
 }
 
 /*
 ** Never lose an incoming message: an unknown target gets a buffer created
 ** on the fly (e.g. a private message from someone we never talked to).
 */
-int buffers_route(t_syschat *syschat, const char *name)
+int buffers_route_on(t_syschat *syschat, unsigned server_id, const char *name)
 {
 	int	index;
 
+	if (!syschat)
+		return (-1);
 	if (!name || name[0] == '\0')
 		return (syschat->active);
-	index = buffers_find(syschat, name);
+	index = buffers_find_on(syschat, server_id, name);
 	if (index == -1)
-		index = buffers_new(syschat, name);
+		index = buffers_new_on(syschat, server_id, name);
 	return (index);
+}
+
+int buffers_route(t_syschat *syschat, const char *name)
+{
+	if (!syschat)
+		return (-1);
+	return (buffers_route_on(syschat, (unsigned) syschat->current, name));
 }
 
 /*
@@ -194,6 +345,7 @@ void buffers_switch(t_syschat *syschat, int index)
 	if (!syschat || index < 0 || index >= syschat->buffer_count)
 		return ;
 	syschat->active = index;
+	syschat->current = syschat->buffers[index].server_id;
 	syschat->buffers[index].unread = 0;
 }
 
@@ -218,6 +370,13 @@ char *buffers_active_name(t_syschat *syschat)
 	return (syschat->buffers[syschat->active].name);
 }
 
+int buffers_active_kind(t_syschat *syschat)
+{
+	if (!syschat || syschat->active < 0 || syschat->active >= syschat->buffer_count)
+		return (-1);
+	return (syschat->buffers[syschat->active].kind);
+}
+
 int buffers_unread_total(t_syschat *syschat)
 {
 	int	total = 0;
@@ -233,15 +392,10 @@ void buffers_free(t_syschat *syschat)
 		return ;
 	for (int i = 0; i != syschat->buffer_count; i++)
 	{
-		if (syschat->buffers[i].name)
-			free(syschat->buffers[i].name);
+		buffer_dispose(&syschat->buffers[i]);
 		syschat->buffers[i].name = NULL;
 		for (int j = 0; j != SYSCHAT_HISTORY; j++)
-		{
-			if (syschat->buffers[i].lines[j])
-				free(syschat->buffers[i].lines[j]);
 			syschat->buffers[i].lines[j] = NULL;
-		}
 	}
 	syschat->buffer_count = 0;
 	syschat->active = -1;

@@ -132,7 +132,7 @@ static size_t	tab_bar(t_syschat *syschat, char *dst, size_t dstsz, int width)
 	for (i = 0; i != syschat->buffer_count; i++)
 	{
 		/* every tab is " name ", plus the unread marker when there is one */
-		widths[i] = screen_text_width(syschat->buffers[i].name) + 2
+		widths[i] = screen_text_width(syschat->buffers[i].label) + 2
 			+ (syschat->buffers[i].unread ? 1 : 0);
 	}
 	/* Not even the active tab fits: keep a position marker, never a blank
@@ -170,11 +170,11 @@ static size_t	tab_bar(t_syschat *syschat, char *dst, size_t dstsz, int width)
 		visible += widths[i];
 		if (i == syschat->active)
 			used += snprintf(dst + used, dstsz - used, "%s %s %s",
-				TAB_ACTIVE, syschat->buffers[i].name, RESET);
+				TAB_ACTIVE, syschat->buffers[i].label, RESET);
 		else
 			used += snprintf(dst + used, dstsz - used, "%s %s%s ",
 				syschat->buffers[i].unread ? TAB_UNREAD : TAB_IDLE,
-				syschat->buffers[i].name,
+				syschat->buffers[i].label,
 				syschat->buffers[i].unread ? "*" : "");
 		if (used >= dstsz - 1)
 			return (dstsz - 1);
@@ -401,7 +401,7 @@ void	screen_draw(t_syschat *syschat, const char *input)
 	if (syschat->active >= 0 && syschat->active < syschat->buffer_count)
 	{
 		const char	*name = syschat->buffers[syschat->active].name;
-		const char	*nick = syschat->nickname ? syschat->nickname : "";
+		const char	*nick = SYSC(syschat)->nickname ? SYSC(syschat)->nickname : "";
 		/* "[#chan] " is strlen+3 visible, "<nick> " is strlen+4. */
 		int			plen = (int)(strlen(name) + strlen(nick)) + 7;
 
