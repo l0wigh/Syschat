@@ -1,6 +1,42 @@
 #include "commands.h"
 #include "buffers.h"
+#include "screen.h"
 #include <time.h>
+
+#define IRC_MAX_LINE 512
+
+/*
+** Single exit point for a PRIVMSG: truncates to the server limit (512 bytes
+** including CRLF and the prefix) on a complete UTF-8 character, and tells the
+** caller when it had to cut. Returns the text actually sent, or NULL.
+*/
+const char *send_privmsg(t_syschat *syschat, const char *target, const char *text, int *truncated)
+{
+	static char	payload[BF_SIZE * 2];
+	char		message[IRC_MAX_LINE + SYSCHAT_NAME_LEN + 16];
+	size_t		room;
+	size_t		len;
+
+	if (truncated)
+		*truncated = 0;
+	room = IRC_MAX_LINE - 2 - 8 - 1 - strlen(target) - 1;
+	len = strlen(text);
+	if (len > room)
+	{
+		len = room;
+		while (len > 0 && ((unsigned char) text[len] & 0xC0) == 0x80)
+			len--;
+		if (truncated)
+			*truncated = 1;
+	}
+	if (len == 0)
+		return (NULL);
+	memcpy(payload, text, len);
+	payload[len] = '\0';
+	snprintf(message, sizeof(message), "PRIVMSG %s :%s\r\n", target, payload);
+	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+	return (payload);
+}
 
 void commands_handle_exit(t_syschat *syschat)
 {
@@ -127,10 +163,11 @@ void commands_handle_msg(t_syschat *syschat, char *command)
 {
 	char	*target;
 	char	*text;
-	char	message[BF_SIZE];
-	char	line[BF_SIZE * 2];
-	size_t	len;
-	int		index;
+	char		line[BF_SIZE * 2];
+	size_t		len;
+	int			index;
+	int			truncated;
+	const char	*sent;
 
 	target = strchr(command, ' ');
 	if (!target)
@@ -147,18 +184,25 @@ void commands_handle_msg(t_syschat *syschat, char *command)
 		text[len - 1] = '\0';
 	if (!*text)
 		return ;
-	bzero(message, BF_SIZE);
-	snprintf(message, BF_SIZE, "PRIVMSG %s :%s\r\n", target, text);
-	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+	sent = send_privmsg(syschat, target, text, &truncated);
+	if (!sent)
+		return ;
 	bzero(line, sizeof(line));
 	if (target[0] == '#')
-		snprintf(line, sizeof(line), "[\e[0;35m%s\e[0m] <\e[0;33m%s\e[0m>: \e[0;33m%s\e[0m",
-			target, syschat->nickname, text);
+		snprintf(line, sizeof(line), "<\e[0;33m%s\e[0m> \e[0;33m%s\e[0m",
+			syschat->nickname, sent);
 	else
-		snprintf(line, sizeof(line), "\e[0;33m%s\e[0m -> \e[0;34m%s\e[0m: \e[0;33m%s\e[0m",
-			syschat->nickname, target, text);
+		snprintf(line, sizeof(line), "\e[0;33m%s\e[0m -> \e[0;34m%s\e[0m \e[0;33m%s\e[0m",
+			syschat->nickname, target, sent);
 	index = buffers_route(syschat, target);
 	buffers_append(syschat, index, line);
+	if (truncated)
+	{
+		bzero(line, sizeof(line));
+		snprintf(line, sizeof(line), "\e[0;31mmessage tronqué à %d/%d caractères (limite serveur 512 octets)\e[0m",
+			screen_text_width(sent), screen_text_width(text));
+		buffers_append(syschat, index, line);
+	}
 	if (index != -1)
 		buffers_switch(syschat, index);
 }
@@ -232,7 +276,7 @@ void commands_handle_cmd_list(t_syschat *syschat)
 		"close [#<channel>]               -> same as part",
 		"next [n] / prev [n]              -> go to next / previous buffer",
 		"list [motif]                     -> list the server channels in a buffer",
-		"switch #<channel>                -> show the given buffer",
+		"switch #<channel>                -> show the given buffer (n/m marker when the tab bar is narrow)",
 		"privmsg <username>               -> send a message to a user",
 		"nick <new nickname>              -> change your current nickname",
 		"clear                            -> clear the current buffer",

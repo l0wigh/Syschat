@@ -29,6 +29,9 @@ python3 tests/functional_numerics.py
 echo "--- functional_list ---"
 python3 tests/functional_list.py
 
+echo "--- functional_input ---"
+python3 tests/functional_input.py
+
 if [ "${SYSCHAT_NET_TESTS:-0}" = "1" ]; then
 	echo "--- network_smoke (real network) ---"
 	python3 tests/network_smoke.py

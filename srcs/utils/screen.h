@@ -3,6 +3,7 @@
 
 #include "../syschat.h"
 
+int		screen_text_width(const char *s);
 int		screen_width(void);
 int		screen_height(void);
 void	screen_setup(t_syschat *syschat);

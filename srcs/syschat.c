@@ -67,9 +67,10 @@ void syschat_echo(char *text)
 
 static void syschat_send_line(char *input)
 {
-	char	*name;
-	char	message[BF_SIZE];
-	char	line[BF_SIZE * 2];
+	char		*name;
+	char		line[BF_SIZE * 2];
+	const char	*sent;
+	int			truncated;
 
 	name = buffers_active_name(&syschat);
 	if (!name || syschat.active <= 0)
@@ -77,19 +78,24 @@ static void syschat_send_line(char *input)
 		syschat_echo("\e[0;31mNot in a channel or a private message. Use /join <channel>\e[0m");
 		return ;
 	}
-	if (strlen(input) > BF_SIZE - 16)
+	sent = send_privmsg(&syschat, name, input, &truncated);
+	if (!sent)
 		return ;
-	bzero(message, BF_SIZE);
-	snprintf(message, BF_SIZE, "PRIVMSG %s :%s\r\n", name, input);
-	send(syschat.net_socket, message, strlen(message), MSG_DONTWAIT);
 	bzero(line, sizeof(line));
 	if (name[0] == '#')
-		snprintf(line, sizeof(line), "[\e[0;35m%s\e[0m] <\e[0;33m%s\e[0m>: \e[0;33m%s\e[0m",
-			name, syschat.nickname, input);
+		snprintf(line, sizeof(line), "<\e[0;33m%s\e[0m> \e[0;33m%s\e[0m",
+			syschat.nickname, sent);
 	else
-		snprintf(line, sizeof(line), "\e[0;33m%s\e[0m -> \e[0;34m%s\e[0m: \e[0;33m%s\e[0m",
-			syschat.nickname, name, input);
+		snprintf(line, sizeof(line), "\e[0;33m%s\e[0m -> \e[0;34m%s\e[0m \e[0;33m%s\e[0m",
+			syschat.nickname, name, sent);
 	buffers_append(&syschat, syschat.active, line);
+	if (truncated)
+	{
+		bzero(line, sizeof(line));
+		snprintf(line, sizeof(line), "\e[0;31mmessage tronqué à %d/%d caractères (limite serveur 512 octets)\e[0m",
+			screen_text_width(sent), screen_text_width(input));
+		buffers_append(&syschat, syschat.active, line);
+	}
 }
 
 /*
@@ -123,8 +129,12 @@ void syschat_handle_input(char *buffer, int size)
 			buffers_cycle(&syschat, 1);
 		else if (c == 127 || c == 8)
 		{
+			/* Step back over the whole UTF-8 character, not one byte. */
 			if (input_len > 0)
-				input[--input_len] = '\0';
+				input_len--;
+			while (input_len > 0 && ((unsigned char) input[input_len] & 0xC0) == 0x80)
+				input_len--;
+			input[input_len] = '\0';
 		}
 		else if (c == '\n' || c == '\r')
 		{
@@ -139,7 +149,7 @@ void syschat_handle_input(char *buffer, int size)
 			input_len = 0;
 			input[0] = '\0';
 		}
-		else if (c >= 32 && input_len + 1 < SYSCHAT_LINE_LEN)
+		else if ((unsigned char) c >= 32 && input_len + 1 < SYSCHAT_LINE_LEN)
 		{
 			input[input_len++] = c;
 			input[input_len] = '\0';

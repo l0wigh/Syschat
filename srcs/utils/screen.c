@@ -46,7 +46,7 @@ static size_t	utf8_len(const char *s)
 }
 
 /* Displayed columns of an ASCII/UTF-8 string (one column per character). */
-static int		text_width(const char *s)
+int	screen_text_width(const char *s)
 {
 	int	width;
 
@@ -122,7 +122,7 @@ static size_t	tab_bar(t_syschat *syschat, char *dst, size_t dstsz, int width)
 	{
 		snprintf(right, sizeof(right), "%d buf%s",
 			syschat->buffer_count, syschat->buffer_count > 1 ? "s" : "");
-		right_len = text_width(right);
+		right_len = screen_text_width(right);
 		if (right_len < 0 || right_len > width / 2)
 			right_len = 0;
 	}
@@ -132,7 +132,7 @@ static size_t	tab_bar(t_syschat *syschat, char *dst, size_t dstsz, int width)
 	for (i = 0; i != syschat->buffer_count; i++)
 	{
 		/* active: " name " (no brackets), others: " [name]". */
-		widths[i] = text_width(syschat->buffers[i].name) + 2
+		widths[i] = screen_text_width(syschat->buffers[i].name) + 2
 			+ (i == syschat->active ? 0 : 1)
 			+ (syschat->buffers[i].unread ? 1 : 0);
 	}
