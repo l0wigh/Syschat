@@ -5,3 +5,4 @@ objs/
 *.o
 core
 core.*
+tests/wrap_unit
