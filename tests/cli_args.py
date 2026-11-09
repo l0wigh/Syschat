@@ -7,7 +7,7 @@ refused instead of silently clamped.
 
 Usage: ./build.sh && python3 tests/cli_args.py [binary]
 """
-import subprocess, sys, os
+import subprocess, sys, os, pty, termios
 
 BIN = sys.argv[1] if len(sys.argv) > 1 else "./syschat"
 
@@ -41,6 +41,31 @@ checks["port -1 -> refused, exit 9"] = code == 9 and "65535" in out
 # crash happened in argv parsing, before any lookup: exit 4 means we got past it.
 code, out = run(["no-such-host.invalid", "tester"], timeout=10)
 checks["host nick (no port) -> parses, then fails on DNS (4)"] = code == 4
+
+# --tls-required means "never plaintext"; combining it with --no-tls is a
+# contradiction the client must refuse instead of silently picking a winner.
+code, out = run(["--no-tls", "--tls-required", "127.0.0.1", "tester"])
+checks["--no-tls + --tls-required -> refused, exit 11"] = code == 11 and "contradict" in out
+
+
+def run_pty(args, timeout=10):
+    """Fatal connection errors happen after raw mode is entered; the terminal
+    must be handed back, otherwise the shell is left without echo."""
+    master, slave = pty.openpty()
+    before = termios.tcgetattr(slave)
+    proc = subprocess.Popen([BIN] + args, stdin=slave, stdout=slave, stderr=slave,
+                            close_fds=True)
+    rc = proc.wait(timeout=timeout)
+    after = termios.tcgetattr(slave)
+    os.close(slave)
+    os.close(master)
+    return (rc, bool(before[3] & termios.ICANON) and bool(before[3] & termios.ECHO),
+            bool(after[3] & termios.ICANON), bool(after[3] & termios.ECHO))
+
+
+rc, was_cooked, is_canon, has_echo = run_pty(["no-such-host.invalid", "tester"])
+checks["fatal DNS error restores the terminal (ICANON + ECHO)"] = \
+    rc == 4 and was_cooked and is_canon and has_echo
 
 for name, passed in checks.items():
     print(("OK   " if passed else "FAIL ") + name)

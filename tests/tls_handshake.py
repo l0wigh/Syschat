@@ -80,6 +80,7 @@ def server(port, tls, log, ready, drop_first=False, ctx=None):
         except (socket.timeout, OSError):
             break
         seen += 1
+        log.append("ACCEPT")
         if drop_first and seen == 1:
             try:
                 conn.recv(4096)
@@ -160,7 +161,7 @@ def run_client(args, seconds=2.5, env=None):
         os.close(master)
     except OSError:
         pass
-    return strip_ansi(out.decode(errors="replace"))
+    return proc.returncode, strip_ansi(out.decode(errors="replace"))
 
 
 def case(name, port, tls, flags, cert, key, drop_first=False, wait=2.5, env=None):
@@ -175,10 +176,10 @@ def case(name, port, tls, flags, cert, key, drop_first=False, wait=2.5, env=None
         # this port. Skipping is honest: a bind conflict is not a TLS failure,
         # and the same logic is covered by the other cases.
         print("SKIP %s (port %d busy)" % (name, port))
-        return None, None
-    text = run_client([HOST, "tester", str(port)] + flags, seconds=wait, env=env)
+        return None, None, None
+    rc, text = run_client([HOST, "tester", str(port)] + flags, seconds=wait, env=env)
     th.join(timeout=5)
-    return log, text
+    return log, text, rc
 
 
 def main():
@@ -188,7 +189,7 @@ def main():
     tmp = tempfile.mkdtemp(prefix="syschat-tls-")
     cert, key = make_cert(tmp)
 
-    log, text = case("tls encrypted session (--insecure)", 16967, True, ["--insecure"], cert, key)
+    log, text, rc = case("tls encrypted session (--insecure)", 16967, True, ["--insecure"], cert, key)
     if text is not None:
         assert log is not None
         CASES["TLS: server received PASS/NICK/USER decrypted"] = any("PASS none" in l for l in log) \
@@ -197,7 +198,7 @@ def main():
         CASES["TLS: banner says cert NOT verified with --insecure"] = "NOT verified" in text
         CASES["TLS: server answer reaches the client"] = "Welcome over TLS" in text
 
-    log, text = case("plaintext fallback (--tls on a plain server)", 16968, False,
+    log, text, rc = case("plaintext fallback (--tls on a plain server)", 16968, False,
                      ["--tls"], cert, key, drop_first=True, wait=3.5)
     if text is not None:
         assert log is not None
@@ -211,22 +212,38 @@ def main():
     # No flag at all: the port alone must select TLS. The self-signed test
     # certificate is trusted-off through the env var, not through --insecure,
     # so this still proves the port 6697 default.
-    log, text = case("port 6697 implies TLS", 6697, True, [], cert, key,
+    log, text, rc = case("port 6697 implies TLS", 6697, True, [], cert, key,
                      env={"SYSCHAT_TLS_NO_VERIFY": "1"})
     if text is not None:
         CASES["6697: TLS used without any flag"] = "TLSv1.3" in text and "plaintext" not in text
 
     # Security-critical: without --insecure a self-signed certificate must be
     # refused, and the refusal must be announced rather than silently ignored.
-    log, text = case("self-signed refused without --insecure", 16969, True,
+    log, text, rc = case("self-signed refused without --insecure", 16969, True,
                      ["--tls"], cert, key, wait=3.0)
     if text is not None:
         CASES["verify: self-signed cert refused without --insecure"] = \
             "handshake failed" in text and "TLSv1.3" not in text
 
+    # --tls-required: the same plaintext listener, but no downgrade allowed.
+    # The exit code and the absence of a second connection are the point: the
+    # current fallback would reconnect in the clear, which is exactly what an
+    # active attacker wants.
+    # drop_first: the plaintext listener hangs up on the ClientHello, so the
+    # handshake fails at once instead of waiting for the 20 s timeout.
+    log, text, rc = case("strict mode refuses the plaintext fallback", 16970, False,
+                         ["--tls", "--tls-required"], cert, key, wait=3.0,
+                         drop_first=True)
+    if text is not None:
+        CASES["strict: non-zero exit instead of a plaintext downgrade"] = rc == 10
+        CASES["strict: the reason reaches stderr"] = \
+            "TLS is required" in text and "handshake failed" in text
+        CASES["strict: no second connection reaches the server"] = \
+            len([l for l in log if l == "ACCEPT"]) == 1
+
     # 16966, not 16667: that one belongs to functional_buffers.py, and two
     # suites running side by side in the same checkout would collide.
-    log, text = case("port 6667-style plaintext default", 16966, False, [], cert, key)
+    log, text, rc = case("port 6667-style plaintext default", 16966, False, [], cert, key)
     if text is not None:
         CASES["other port: no TLS by default"] = "plaintext" in text and "TLSv1.3" not in text
 

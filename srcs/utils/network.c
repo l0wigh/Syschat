@@ -48,6 +48,13 @@ void	network_connect_server(t_syschat *syschat)
 	if (tls_connect(syschat, reason, sizeof(reason)) == 0)
 		return ;
 	/*
+	** --tls-required: no plaintext, ever. Refusing here is what turns the
+	** handshake into a real guard instead of a hint: an attacker who cuts
+	** the handshake gains nothing.
+	*/
+	if (syschat->tls_required)
+		error_tls_exit(syschat, reason);
+	/*
 	** A TLS failure must never lock the user out of IRC: fall back to the
 	** plaintext connection used before this feature, and say so in clear
 	** so nobody believes the session is encrypted when it is not.

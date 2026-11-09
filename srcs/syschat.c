@@ -10,6 +10,30 @@
 
 static t_syschat syschat;
 static struct termios oldt, newt;
+static int tty_raw;
+
+void syschat_terminal_raw(void)
+{
+	if (tty_raw || tcgetattr(STDIN_FILENO, &oldt) != 0)
+		return ;
+	newt = oldt;
+	newt.c_lflag &= ~(ICANON | ECHO);
+	newt.c_oflag &= ~OPOST;
+	newt.c_cc[VMIN] = 1;
+	newt.c_cc[VTIME] = 0;
+	tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+	tty_raw = 1;
+}
+
+/* Called from error_cleaning() too: a fatal error after raw mode must not
+** leave the shell without echo. */
+void syschat_terminal_restore(void)
+{
+	if (!tty_raw)
+		return ;
+	tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+	tty_raw = 0;
+}
 static char input[SYSCHAT_LINE_LEN];
 static int input_len = 0;
 
@@ -32,12 +56,14 @@ void syschat_load_config(char **argv, int argc)
 	int		pos;
 	int		force_tls;
 	int		no_tls;
+	int		strict;
 
 	bzero(&syschat, sizeof(t_syschat));
 	bzero(positional, sizeof(positional));
 	pos = 0;
 	force_tls = 0;
 	no_tls = 0;
+	strict = 0;
 	for (i = 1; i < argc; i++)
 	{
 		if (!strcmp(argv[i], "--tls") || !strcmp(argv[i], "-tls"))
@@ -46,6 +72,8 @@ void syschat_load_config(char **argv, int argc)
 			no_tls = 1;
 		else if (!strcmp(argv[i], "--insecure") || !strcmp(argv[i], "-insecure"))
 			syschat.tls_insecure = 1;
+		else if (!strcmp(argv[i], "--tls-required") || !strcmp(argv[i], "-tls-required"))
+			strict = 1;
 		else if (pos < 3)
 			positional[pos++] = argv[i];
 	}
@@ -72,10 +100,24 @@ void syschat_load_config(char **argv, int argc)
 	if ((env = getenv("SYSCHAT_TLS_NO_VERIFY")) != NULL
 		&& (!strcmp(env, "1") || !strcmp(env, "true") || !strcmp(env, "yes")))
 		syschat.tls_insecure = 1;
+	if ((env = getenv("SYSCHAT_TLS_STRICT")) != NULL
+		&& (!strcmp(env, "1") || !strcmp(env, "true") || !strcmp(env, "yes")))
+		strict = 1;
 	if (force_tls)
 		syschat.tls = 1;
 	if (no_tls)
 		syschat.tls = 0;
+	/*
+	** Strict = "never plaintext". It is orthogonal to --insecure (which is
+	** about verification, not encryption), and it contradicts --no-tls.
+	*/
+	if (strict)
+	{
+		if (no_tls)
+			error_exit(NULL, 11);
+		syschat.tls_required = 1;
+		syschat.tls = 1;
+	}
 	if (syschat.tls_insecure && !no_tls)
 		syschat.tls = 1;
 	syschat.active = -1;
@@ -326,13 +368,7 @@ int main(int argc, char **argv)
 	syschat_load_config(argv, argc);
 	screen_setup(&syschat);
 
-	tcgetattr(STDIN_FILENO, &oldt);
-	newt = oldt;
-	newt.c_lflag &= ~(ICANON | ECHO);
-	newt.c_oflag &= ~OPOST;
-	newt.c_cc[VMIN] = 1;
-	newt.c_cc[VTIME] = 0;
-	tcsetattr(STDIN_FILENO, TCSANOW, &newt);
+	syschat_terminal_raw();
 
 	network_connect_server(&syschat);
 	syschat_say_hello();
@@ -350,7 +386,7 @@ int main(int argc, char **argv)
 	screen_draw(&syschat, input);
 	syschat_loop();
 
-	tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
+	syschat_terminal_restore();
 	error_cleaning(&syschat);
 	return (0);
 }

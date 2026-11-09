@@ -3,9 +3,25 @@
 
 #ifndef _POSIX_C_SOURCE
 # define _POSIX_C_SOURCE 200809L
+/*
+** Raw mode is entered before the connection is attempted, so a fatal error
+** during connect must be able to put the terminal back: without this the
+** shell is left with ECHO off and the user types blind.
+*/
+void	syschat_terminal_raw(void);
+void	syschat_terminal_restore(void);
+
 #endif
 #ifndef _DEFAULT_SOURCE
 # define _DEFAULT_SOURCE
+/*
+** Raw mode is entered before the connection is attempted, so a fatal error
+** during connect must be able to put the terminal back: without this the
+** shell is left with ECHO off and the user types blind.
+*/
+void	syschat_terminal_raw(void);
+void	syschat_terminal_restore(void);
+
 #endif
 
 #include <unistd.h>
@@ -65,6 +81,7 @@ typedef struct s_syschat
 	int						tls;
 	int						tls_active;
 	int						tls_insecure;
+	int						tls_required;
 	void					*tls_state;
 	int					listing;
 	time_t				listing_since;
@@ -75,5 +92,13 @@ typedef struct s_syschat
 	struct sockaddr_in6	v6_socket;
 	int					running;
 } t_syschat;
+
+/*
+** Raw mode is entered before the connection is attempted, so a fatal error
+** during connect must be able to put the terminal back: without this the
+** shell is left with ECHO off and the user types blind.
+*/
+void	syschat_terminal_raw(void);
+void	syschat_terminal_restore(void);
 
 #endif

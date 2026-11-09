@@ -43,6 +43,12 @@ void error_print(int err)
 		case 9:
 			fprintf(stderr, "port must be an integer between 1 and 65535.");
 			break;
+		case 10:
+			fprintf(stderr, "TLS is required (--tls-required) but the handshake failed.");
+			break;
+		case 11:
+			fprintf(stderr, "--no-tls and --tls-required contradict each other, pick one.");
+			break;
 		default:
 			fprintf(stderr, "unknown error.");
 	}
@@ -53,6 +59,7 @@ void error_cleaning(t_syschat *syschat)
 {
 	if (!syschat)
 		return;
+	syschat_terminal_restore();
 	syschat->listing = 0;
 	syschat->elist_mask = 0;
 
@@ -66,4 +73,16 @@ void error_cleaning(t_syschat *syschat)
 	if (syschat->nickname)
 		free(syschat->nickname);
 	buffers_free(syschat);
+}
+
+void error_tls_exit(t_syschat *syschat, const char *reason)
+{
+	/*
+	** error_print() only knows fixed messages; the handshake reason is
+	** runtime text, and it is the only thing that tells the user whether to
+	** fix their clock, their CA bundle or their port.
+	*/
+	fprintf(stderr, "Error: TLS is required but the handshake failed: %s\n", reason);
+	error_cleaning(syschat);
+	exit(10);
 }
