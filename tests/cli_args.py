@@ -7,7 +7,7 @@ refused instead of silently clamped.
 
 Usage: ./build.sh && python3 tests/cli_args.py [binary]
 """
-import subprocess, sys, os, pty, termios, time
+import subprocess, sys, os, pty, termios, time, select
 
 BIN = sys.argv[1] if len(sys.argv) > 1 else "./syschat"
 
@@ -48,12 +48,32 @@ checks["--no-tls + --tls-required -> refused, exit 11"] = code == 11 and "contra
 
 def starts_without_argument(timeout=8):
     """No argument must start the client (it can /connect now), not print a
-    usage error: the old check asserted the opposite behaviour."""
+    usage error: the old check asserted the opposite behaviour.
+
+    Also checks that /? is visible in the LAST frame: with no buffer there is
+    nowhere to append, and text written straight to stdout is wiped by the
+    repaint that follows every command (measured, not assumed).
+    """
     master, slave = pty.openpty()
     proc = subprocess.Popen([BIN], stdin=slave, stdout=slave, stderr=slave, close_fds=True)
     os.close(slave)
     time.sleep(0.8)
     alive = proc.poll() is None
+    os.write(master, b"/?\n")
+    time.sleep(0.6)
+    out = b""
+    while True:
+        ready, _, _ = select.select([master], [], [], 0.1)
+        if not ready:
+            break
+        try:
+            chunk = os.read(master, 65536)
+        except OSError:
+            break
+        if not chunk:
+            break
+        out += chunk
+    last_frame = out.decode(errors="replace").split("\033[H")[-1]
     os.write(master, b"/exit\n")
     try:
         rc = proc.wait(timeout=timeout)
@@ -61,11 +81,12 @@ def starts_without_argument(timeout=8):
         proc.kill()
         rc = -1
     os.close(master)
-    return alive, rc
+    return alive, rc, "Commands list" in last_frame
 
 
-alive, rc = starts_without_argument()
+alive, rc, help_visible = starts_without_argument()
 checks["no argument -> starts disconnected, /exit returns 0"] = alive and rc == 0
+checks["no argument -> /? is visible in the last frame"] = help_visible
 
 
 def run_pty(args, timeout=10):

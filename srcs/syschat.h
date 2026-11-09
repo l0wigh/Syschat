@@ -50,6 +50,7 @@ void	syschat_terminal_restore(void);
 #define SYSCHAT_LINE_LEN 1024
 #define SYSCHAT_NET_BUFFER 16384
 #define SYSCHAT_LIST_BUFFER "Liste"
+#define SYSCHAT_STATUS_LINES 32
 
 typedef struct s_syschat t_syschat;
 
@@ -127,6 +128,14 @@ typedef struct s_syschat
 	int					conn_count;		/* slots never move: high water mark */
 	int					current;		/* server of the active buffer */
 	char				*default_nick;	/* used by /connect when no server exists yet */
+	/*
+	** Before the first connection there is no buffer to write into. What a
+	** command says then (usage errors, "?" help) goes into this ring, and
+	** screen_draw() paints it in the empty frame -- writing on stdout from
+	** a command would be erased by the repaint that follows every command.
+	*/
+	char				*status[SYSCHAT_STATUS_LINES];
+	int					status_count;
 	t_buffer			buffers[SYSCHAT_MAX_BUFFERS];
 	int					buffer_count;
 	int					active;
@@ -143,6 +152,7 @@ int		syschat_conn_add(t_syschat *syschat, const char *label, const char *host,
 			const char *nickname, int port);
 void	syschat_conn_close(t_syschat *syschat, int id);
 void	syschat_say_hello(t_conn *conn);
+void	syschat_status(t_syschat *syschat, const char *text);
 void	syschat_echo(char *text);
 void	syschat_handle_input(char *buffer, int size);
 void	syschat_read_network(t_conn *conn);

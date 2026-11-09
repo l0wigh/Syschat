@@ -151,9 +151,9 @@ static void	commands_say(t_syschat *syschat, const char *text)
 	*/
 	if (syschat->buffer_count == 0)
 	{
-		write(STDOUT_FILENO, "\r\n", 2);
-		write(STDOUT_FILENO, text, strlen(text));
-		write(STDOUT_FILENO, "\r\n", 2);
+		/* Painted by screen_draw() in the empty frame; stdout would be
+		** wiped by the repaint that follows every command. */
+		syschat_status(syschat, text);
 		return ;
 	}
 	index = syschat->active;
@@ -581,7 +581,7 @@ void commands_handle_cmd_list(t_syschat *syschat)
 	};
 
 	for (int i = 0; help[i]; i++)
-		buffers_append(syschat, syschat->active, help[i]);
+		commands_say(syschat, help[i]);
 }
 
 void commands_handle_ctcp(t_syschat *syschat, char **parsed)

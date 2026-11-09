@@ -282,6 +282,23 @@ void syschat_say_hello(t_conn *conn)
 	net_send(conn, message, strlen(message));
 }
 
+void syschat_status(t_syschat *syschat, const char *text)
+{
+	int	i;
+
+	if (!syschat || !text)
+		return ;
+	if (syschat->status[0])
+		free(syschat->status[0]);
+	for (i = 0; i + 1 < SYSCHAT_STATUS_LINES; i++)
+		syschat->status[i] = syschat->status[i + 1];
+	syschat->status[SYSCHAT_STATUS_LINES - 1] = strdup(text);
+	if (!syschat->status[SYSCHAT_STATUS_LINES - 1])
+		return ;
+	if (syschat->status_count < SYSCHAT_STATUS_LINES)
+		syschat->status_count++;
+}
+
 void syschat_echo(char *text)
 {
 	char line[BF_SIZE * 2];

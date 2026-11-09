@@ -90,6 +90,12 @@ void error_cleaning(t_syschat *syschat)
 		conn->hostname = NULL;
 		conn->nickname = NULL;
 	}
+	for (int i = 0; i != SYSCHAT_STATUS_LINES; i++)
+	{
+		if (syschat->status[i])
+			free(syschat->status[i]);
+		syschat->status[i] = NULL;
+	}
 	if (syschat->default_nick)
 	{
 		free(syschat->default_nick);
