@@ -6,3 +6,4 @@ objs/
 core
 core.*
 tests/wrap_unit
+build/

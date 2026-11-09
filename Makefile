@@ -21,6 +21,15 @@ OBJS_DIR	= objs/
 PROJECT_H	= srcs/
 OBJS		= $(SRCS:.c=.o)
 OBJECTS_PREFIXED = $(addprefix $(OBJS_DIR), $(OBJS))
+
+# mbedTLS is vendored (vendor/mbedtls) and built with the same compiler as
+# syschat: no system libssl to install, no libc mismatch. Third-party code is
+# built without -Werror and without sanitizers.
+MBEDTLS_DIR		= vendor/mbedtls
+MBEDTLS_OBJS_DIR	= build/mbedtls/
+MBEDTLS_INC		= -I$(MBEDTLS_DIR)/include -I$(MBEDTLS_DIR)/library
+MBEDTLS_SRCS	= $(wildcard $(MBEDTLS_DIR)/library/*.c)
+MBEDTLS_OBJS	= $(patsubst $(MBEDTLS_DIR)/library/%.c,$(MBEDTLS_OBJS_DIR)%.o,$(MBEDTLS_SRCS))
 CC			?= gcc
 CC_FLAGS	= -std=c11 -Wall -Werror -Wextra -Wno-unused-result -Wno-unused-variable -O2
 # CC_FLAGS	= -Wall -Werror -Wextra -Wno-unused-result -Wno-unused-variable -g3
@@ -29,17 +38,22 @@ LIBS		=
 
 $(OBJS_DIR)%.o : %.c $(PROJECT_H)
 	@mkdir -p $(dir $@)
-	@$(CC) $(CC_FLAGS) -c $< -o $@
+	@$(CC) $(CC_FLAGS) $(MBEDTLS_INC) -c $< -o $@
 	@printf	"\033[2K\r${BLU}${TOTEM} [BUILD]${RST} '$<' $(END)"
 
-$(NAME): $(OBJECTS_PREFIXED)
-	@$(CC) -o $(NAME) $(OBJECTS_PREFIXED) $(CC_FLAGS) $(LIBS)
+$(MBEDTLS_OBJS_DIR)%.o : $(MBEDTLS_DIR)/library/%.c
+	@mkdir -p $(dir $@)
+	@$(CC) -std=c11 -O2 -w $(MBEDTLS_INC) -c $< -o $@
+
+$(NAME): $(OBJECTS_PREFIXED) $(MBEDTLS_OBJS)
+	@$(CC) -o $(NAME) $(OBJECTS_PREFIXED) $(MBEDTLS_OBJS) $(CC_FLAGS) $(MBEDTLS_INC) $(LIBS)
 	@printf "\033[2K\r\033[0;32m${TOTEM} [END]\033[0m $(NAME)$(END)\n"
 
 all: $(NAME)
 
 clean:
 	@rm -rf $(OBJS_DIR)
+	@rm -rf build
 	@printf "\033[2K\r${GRN}${TOTEM} [CLEAN]${RST} done$(END)\n"
 
 fclean: clean
