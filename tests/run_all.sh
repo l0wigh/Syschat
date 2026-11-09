@@ -20,6 +20,9 @@ python3 tests/cli_args.py ./syschat_dbg
 echo "--- functional_buffers ---"
 python3 tests/functional_buffers.py
 
+echo "--- functional_private ---"
+python3 tests/functional_private.py
+
 if [ "${SYSCHAT_NET_TESTS:-0}" = "1" ]; then
 	echo "--- network_smoke (real network) ---"
 	python3 tests/network_smoke.py

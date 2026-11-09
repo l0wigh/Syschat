@@ -124,18 +124,42 @@ void commands_handle_clear(t_syschat *syschat)
 
 void commands_handle_msg(t_syschat *syschat, char *command)
 {
-	char	*space;
+	char	*target;
+	char	*text;
+	char	message[BF_SIZE];
+	char	line[BF_SIZE * 2];
+	size_t	len;
+	int		index;
 
-	space = strchr(command, ' ');
-	if (!space)
+	target = strchr(command, ' ');
+	if (!target)
 		return ;
-	while (command[0] != ' ')
-		command++;
-	*strchr(command, '\n') = '\0';
-	if (strlen(command) + 2 >= BF_SIZE)
+	target++;
+	text = strchr(target, ' ');
+	if (!text)
 		return ;
-	strcat(command, "\r\n");
-	send(syschat->net_socket, command, strlen(command), MSG_DONTWAIT);
+	*text++ = '\0';
+	if (*text == ':')
+		text++;
+	len = strlen(text);
+	if (len && text[len - 1] == '\n')
+		text[len - 1] = '\0';
+	if (!*text)
+		return ;
+	bzero(message, BF_SIZE);
+	snprintf(message, BF_SIZE, "PRIVMSG %s :%s\r\n", target, text);
+	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+	bzero(line, sizeof(line));
+	if (target[0] == '#')
+		snprintf(line, sizeof(line), "[\e[0;35m%s\e[0m] <\e[0;33m%s\e[0m>: \e[0;33m%s\e[0m",
+			target, syschat->nickname, text);
+	else
+		snprintf(line, sizeof(line), "\e[0;33m%s\e[0m -> \e[0;34m%s\e[0m: \e[0;33m%s\e[0m",
+			syschat->nickname, target, text);
+	index = buffers_route(syschat, target);
+	buffers_append(syschat, index, line);
+	if (index != -1)
+		buffers_switch(syschat, index);
 }
 
 void commands_handle_cmd_list(t_syschat *syschat)
