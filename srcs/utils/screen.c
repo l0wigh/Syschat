@@ -1,7 +1,7 @@
 #include "screen.h"
 #include "buffers.h"
 
-#define TAB_ACTIVE "\033[7;33m"
+#define TAB_ACTIVE "\033[1;37m"
 #define TAB_UNREAD "\033[1;33m"
 #define TAB_IDLE "\033[0;37m"
 #define RESET "\033[0m"
@@ -131,9 +131,8 @@ static size_t	tab_bar(t_syschat *syschat, char *dst, size_t dstsz, int width)
 		avail = 8;
 	for (i = 0; i != syschat->buffer_count; i++)
 	{
-		/* active: " name " (no brackets), others: " [name]". */
+		/* every tab is " name ", plus the unread marker when there is one */
 		widths[i] = screen_text_width(syschat->buffers[i].name) + 2
-			+ (i == syschat->active ? 0 : 1)
 			+ (syschat->buffers[i].unread ? 1 : 0);
 	}
 	/* Not even the active tab fits: keep a position marker, never a blank
@@ -173,10 +172,10 @@ static size_t	tab_bar(t_syschat *syschat, char *dst, size_t dstsz, int width)
 			used += snprintf(dst + used, dstsz - used, "%s %s %s",
 				TAB_ACTIVE, syschat->buffers[i].name, RESET);
 		else
-			used += snprintf(dst + used, dstsz - used, "%s [%s%s]%s",
+			used += snprintf(dst + used, dstsz - used, "%s %s%s ",
 				syschat->buffers[i].unread ? TAB_UNREAD : TAB_IDLE,
 				syschat->buffers[i].name,
-				syschat->buffers[i].unread ? "*" : "", RESET);
+				syschat->buffers[i].unread ? "*" : "");
 		if (used >= dstsz - 1)
 			return (dstsz - 1);
 	}
@@ -200,6 +199,102 @@ static size_t	tab_bar(t_syschat *syschat, char *dst, size_t dstsz, int width)
 	return (used);
 }
 
+static void	row_push(char ***rows, int *count, char *row)
+{
+	char	**grown;
+
+	grown = realloc(*rows, sizeof(char *) * (*count + 1));
+	if (!grown)
+	{
+		free(row);
+		return ;
+	}
+	*rows = grown;
+	grown[*count] = row;
+	(*count)++;
+}
+
+/*
+** Wrap one buffered line into rows of at most `width` visible columns.
+** ANSI sequences are copied through and the last colour seen is re-emitted at
+** the start of each continuation row, so a wrapped coloured message keeps its
+** colour. A multi-byte character is never split. Returns the row count.
+*/
+static int	wrap_line(const char *src, int width, char ***out)
+{
+	char	**rows;
+	char	*row;
+	char	sgr[24];
+	size_t	cap;
+	size_t	len;
+	size_t	start;
+	size_t	step;
+	int		visible;
+	int		count;
+
+	*out = NULL;
+	if (width < 1)
+		width = 1;
+	cap = (size_t)width * 4 + 64;
+	rows = NULL;
+	count = 0;
+	row = calloc(cap, sizeof(char));
+	if (!row)
+		return (0);
+	len = 0;
+	visible = 0;
+	sgr[0] = '\0';
+	while (*src)
+	{
+		if (*src == '\033')
+		{
+			start = len;
+			while (*src && len + 1 < cap)
+			{
+				row[len++] = *src;
+				if (*src++ == 'm')
+					break ;
+			}
+			row[len] = '\0';
+			if (len > start && len - start < sizeof(sgr))
+				memcpy(sgr, row + start, len - start + 1);
+			continue ;
+		}
+		if (visible == width)
+		{
+			row[len] = '\0';
+			row_push(&rows, &count, row);
+			row = calloc(cap, sizeof(char));
+			if (!row)
+				break ;
+			len = 0;
+			visible = 0;
+			if (sgr[0])
+			{
+				memcpy(row, sgr, strlen(sgr));
+				len = strlen(sgr);
+			}
+			while (*src == ' ')
+				src++;
+			continue ;
+		}
+		step = utf8_len(src);
+		if (len + step + 1 >= cap)
+			break ;
+		memcpy(row + len, src, step);
+		len += step;
+		src += step;
+		visible++;
+	}
+	row[len] = '\0';
+	if (len || count == 0)
+		row_push(&rows, &count, row);
+	else
+		free(row);
+	*out = rows;
+	return (count);
+}
+
 void	screen_setup(t_syschat *syschat)
 {
 	(void) syschat;
@@ -219,16 +314,17 @@ void	screen_draw(t_syschat *syschat, const char *input)
 	char	clip[SYSCHAT_LINE_LEN + 64];
 	size_t	size;
 	size_t	used;
-	int		rows;
+	char	**rows;
+	int		nrows;
+	int		rows_count;
 	int		cols;
 	int		room;
-	int		start;
 	int		index;
 	t_buffer	*buffer;
 
-	rows = screen_height();
+	rows_count = screen_height();
 	cols = screen_width();
-	size = (size_t)(cols + 128) * (size_t)(rows + 4) + 1024;
+	size = (size_t)(cols + 128) * (size_t)(rows_count + 4) + 1024;
 	out = calloc(size, sizeof(char));
 	if (!out)
 		return ;
@@ -236,23 +332,42 @@ void	screen_draw(t_syschat *syschat, const char *input)
 	used += snprintf(out + used, size - used, "\033[H");
 	used += tab_bar(syschat, out + used, size - used, cols);
 	used += snprintf(out + used, size - used, "\033[K\r\n");
-	room = rows - 2;
+	room = rows_count - 2;
 	if (room < 0)
 		room = 0;
 	index = syschat->active;
-	if (index >= 0 && index < syschat->buffer_count)
+	if (index >= 0 && index < syschat->buffer_count && room > 0)
 	{
 		buffer = &syschat->buffers[index];
-		start = buffer->count > room ? buffer->count - room : 0;
-		for (int i = start; i != buffer->count; i++)
+		/* Long lines wrap instead of being cut at the right edge. Rows are
+		** collected from the newest line backwards so the view stays anchored
+		** on the last message, and only the last `room` rows are kept. */
+		rows = NULL;
+		nrows = 0;
+		for (int i = buffer->count - 1; i >= 0 && nrows < room; i--)
 		{
-			clip[0] = '\0';
-			append_clipped(clip, sizeof(clip),
-				buffer->lines[(buffer->head - buffer->count + i
-					+ SYSCHAT_HISTORY * 2) % SYSCHAT_HISTORY], cols - 1);
-			used += snprintf(out + used, size - used, "%s\033[K\r\n", clip);
+			char	**wrapped;
+			int		count;
+
+			count = wrap_line(buffer->lines[(buffer->head - buffer->count + i
+						+ SYSCHAT_HISTORY * 2) % SYSCHAT_HISTORY], cols - 1,
+					&wrapped);
+			for (int j = count - 1; j >= 0; j--)
+			{
+				if (nrows < room)
+					row_push(&rows, &nrows, wrapped[j]);
+				else
+					free(wrapped[j]);
+			}
+			free(wrapped);
 		}
-		for (int i = buffer->count; i < room; i++)
+		for (int i = nrows - 1; i >= 0; i--)
+		{
+			used += snprintf(out + used, size - used, "%s\033[K\r\n", rows[i]);
+			free(rows[i]);
+		}
+		free(rows);
+		for (int i = nrows; i < room; i++)
 			used += snprintf(out + used, size - used, "\033[K\r\n");
 	}
 	else

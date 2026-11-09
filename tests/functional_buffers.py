@@ -61,6 +61,11 @@ def serve(srv, ready):
                 chan = line.split(" ")[1]
                 state["joins"].append(chan)
                 conn.sendall((":%s!u@h JOIN :%s\r\n" % ("tester", chan)).encode())
+                if chan == "#beta":
+                    # 200 columns on a 100-column pty: must wrap, not be cut,
+                    # so the tail marker only shows up if wrapping works.
+                    conn.sendall((":carol!c@h PRIVMSG #beta :" + "w" * 200
+                                  + "ZZEND\r\n").encode())
                 if len(state["joins"]) == 2 and not served:
                     served = True
                     time.sleep(0.2)
@@ -133,6 +138,7 @@ def main():
     send("\t")
     pump(0.3)
     marks["tab_to_beta"] = "[#beta] <tester> " in strip_ansi(out[-4000:].decode(errors="replace"))
+    marks["long line wraps instead of being cut"] = "ZZEND" in strip_ansi(out[-8000:].decode(errors="replace"))
     send("\x1b[Z")
     pump(0.3)
     marks["shifttab_back_alpha"] = "[#alpha] <tester> " in strip_ansi(out[-4000:].decode(errors="replace"))
