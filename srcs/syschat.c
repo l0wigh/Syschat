@@ -226,6 +226,16 @@ void syschat_loop(void)
 		}
 		if (fds[1].revents & (POLLIN | POLLHUP | POLLERR))
 			syschat_read_network();
+		if (syschat.listing && time(NULL) - syschat.listing_since >= 5)
+		{
+			int index = buffers_find(&syschat, "Liste");
+
+			syschat.listing = 0;
+			if (index != -1)
+				buffers_append(&syschat, index,
+					"\e[0;31m-- listing stopped after 5s, server sent nothing else\e[0m");
+			screen_draw(&syschat, input);
+		}
 	}
 }
 

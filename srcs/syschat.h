@@ -21,6 +21,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <poll.h>
+#include <time.h>
 
 #define BF_SIZE 512
 #define SYSCHAT_QUIT "Syschat 0.4.1-RC1"
@@ -56,6 +57,11 @@ typedef struct s_syschat
 	int					active;
 	int					net_socket;
 	int					port;
+	int					listing;
+	time_t				listing_since;
+	int					list_received;
+	int					elist_mask;
+	char				list_filter[SYSCHAT_NAME_LEN];
 	struct sockaddr_in	v4_socket;
 	struct sockaddr_in6	v6_socket;
 	int					running;

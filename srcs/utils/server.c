@@ -80,8 +80,9 @@ void server_handle_privmsg(t_syschat *syschat, char **parsed, char *srv_message,
 	if (parsed[2][0] == '#')
 	{
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
-		snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] <\e[0;34m%s\e[0m>: \e[0;34m%s\e[0m",
-			target, parsed[0], parsed[3]);
+		/* The channel name is already the tab title: no need to repeat it. */
+		snprintf(srv_message, BF_SIZE, "<\e[0;34m%s\e[0m>: \e[0;34m%s\e[0m",
+			parsed[0], parsed[3]);
 	}
 	else
 	{
@@ -151,6 +152,44 @@ void server_handle_notice(t_syschat *syschat, char **parsed, char *srv_message, 
 			target, parsed[0], parsed[3]);
 }
 
+#define LIST_BUFFER "Liste"
+
+/*
+** Returns -1 when the numeric is not part of a channel listing, 1 when the
+** line must be displayed (in the Liste buffer) and 0 when it is swallowed.
+** Checked before the generic routing: 322 names its channel in param 3, so
+** otherwise a listed channel we already joined would land in its own tab.
+*/
+static int	numeric_listing(t_syschat *syschat, char **parsed, char *srv_message,
+	char *target, int code)
+{
+	int	shown;
+
+	if (!syschat->listing || (code != 321 && code != 322 && code != 323))
+		return (-1);
+	target_chan(target, SYSCHAT_NAME_LEN, LIST_BUFFER);
+	if (code == 321)
+		return (0);
+	if (code == 323)
+	{
+		snprintf(srv_message, BF_SIZE, "\e[0;37m-- %d channel(s) listed\e[0m",
+			syschat->list_received);
+		syschat->listing = 0;
+		return (1);
+	}
+	shown = 1;
+	if (syschat->list_filter[0] && !strcasestr(parsed[3], syschat->list_filter))
+		shown = 0;
+	if (!shown)
+		return (0);
+	if (parsed[5][0])
+		snprintf(srv_message, BF_SIZE, "\e[0;37m%-24s %4s  %s\e[0m", parsed[3], parsed[4], parsed[5]);
+	else
+		snprintf(srv_message, BF_SIZE, "\e[0;37m%-24s %4s\e[0m", parsed[3], parsed[4]);
+	syschat->list_received++;
+	return (1);
+}
+
 /*
 ** Returns 1 when `srv_message` holds something to display, 0 otherwise.
 ** `target` receives the buffer name the message belongs to.
@@ -191,61 +230,75 @@ int server_handle_message(t_syschat *syschat, char *srv_message, char *target)
 	bzero(srv_message, BF_SIZE);
 	if (is_numeric(parsed[1]))
 	{
-		const char	*target_name;
-		const char	*text;
-		int			code;
-		int			text_index;
+		int	code;
 
 		code = atoi(parsed[1]);
-		/* Only numerics that designate a buffer: errors about a target and
-		** channel facts. Everything else stays in the server window. */
-		target_name = NULL;
-		switch (code)
+		if (code == 5)
 		{
-			case 353:
-				target_name = parsed[4];
-				break ;
-			case 324: case 329: case 331: case 332: case 333: case 341:
-			case 352: case 366: case 367: case 368:
-			case 401: case 403: case 404: case 405: case 407: case 437:
-			case 441: case 442: case 443: case 470: case 471: case 473:
-			case 474: case 475: case 476: case 477: case 478: case 482:
-			case 485:
-				target_name = parsed[3];
-				break ;
-			default:
-				break ;
+			/* ISUPPORT: several 005 lines per session, scan them all. */
+			for (int i = 3; i != 16; i++)
+				if (strncmp(parsed[i], "ELIST=", 6) == 0 && strchr(parsed[i], 'C'))
+					syschat->elist_mask = 1;
 		}
-		target_chan(target, SYSCHAT_NAME_LEN, syschat->hostname);
-		if (target_name && buffers_find(syschat, target_name) != -1)
-			target_chan(target, SYSCHAT_NAME_LEN, target_name);
-		text_index = 3;
-		for (int i = 15; i >= 3; i--)
-			if (parsed[i][0])
-			{
-				text_index = i;
-				break ;
-			}
-		text = parsed[text_index];
-		if (code == 353)
-			snprintf(srv_message, BF_SIZE, "\e[0;37mUsers: %s\e[0m", text);
-		else if (code == 332)
-			snprintf(srv_message, BF_SIZE, "\e[0;37mTopic: %s\e[0m", text);
-		else if (code == 324)
-			snprintf(srv_message, BF_SIZE, "\e[0;37mModes: %s\e[0m", parsed[4]);
-		else if (code == 329)
-			snprintf(srv_message, BF_SIZE, "\e[0;37mCreated: %s\e[0m", parsed[4]);
-		else if (code == 333)
+		displayed = numeric_listing(syschat, parsed, srv_message, target, code);
+		if (displayed == -1)
 		{
-			char	setter[SYSCHAT_NAME_LEN];
+			const char	*target_name;
+			const char	*text;
+			int			text_index;
 
-			snprintf(setter, sizeof(setter), "%s", parsed[4]);
-			setter[strcspn(setter, "!")] = '\0';
-			snprintf(srv_message, BF_SIZE, "\e[0;37mTopic set by %s\e[0m", setter);
+			displayed = 1;
+			/* Only numerics that designate a buffer: errors about a target
+			** and channel facts. Everything else stays in the server window. */
+			target_name = NULL;
+			switch (code)
+			{
+				case 353:
+					target_name = parsed[4];
+					break ;
+				case 324: case 329: case 331: case 332: case 333: case 341:
+				case 352: case 366: case 367: case 368:
+				case 401: case 403: case 404: case 405: case 407: case 437:
+				case 441: case 442: case 443: case 470: case 471: case 473:
+				case 474: case 475: case 476: case 477: case 478: case 482:
+				case 485:
+					target_name = parsed[3];
+					break ;
+				default:
+					break ;
+			}
+			target_chan(target, SYSCHAT_NAME_LEN, syschat->hostname);
+			if (target_name && buffers_find(syschat, target_name) != -1)
+				target_chan(target, SYSCHAT_NAME_LEN, target_name);
+			text_index = 3;
+			for (int i = 15; i >= 3; i--)
+				if (parsed[i][0])
+				{
+					text_index = i;
+					break ;
+				}
+			text = parsed[text_index];
+			if (code == 353)
+				snprintf(srv_message, BF_SIZE, "\e[0;37mUsers: %s\e[0m", text);
+			else if (code == 332)
+				snprintf(srv_message, BF_SIZE, "\e[0;37mTopic: %s\e[0m", text);
+			else if (code == 324)
+				snprintf(srv_message, BF_SIZE, "\e[0;37mModes: %s\e[0m", parsed[4]);
+			else if (code == 329)
+				snprintf(srv_message, BF_SIZE, "\e[0;37mCreated: %s\e[0m", parsed[4]);
+			else if (code == 333)
+			{
+				char	setter[SYSCHAT_NAME_LEN];
+
+				snprintf(setter, sizeof(setter), "%s", parsed[4]);
+				setter[strcspn(setter, "!")] = '\0';
+				snprintf(srv_message, BF_SIZE, "\e[0;37mTopic set by %s\e[0m", setter);
+			}
+			else
+				snprintf(srv_message, BF_SIZE, "\e[0;37m%s\e[0m", text);
 		}
-		else
-			snprintf(srv_message, BF_SIZE, "\e[0;37m%s\e[0m", text);
-		displayed = 1;
+		else if (displayed == 0)
+			displayed = 0;
 	}
 	else if (strcmp(parsed[0], "PING") == 0 || strcmp(parsed[1], "PING") == 0)
 		server_handle_ping(syschat, parsed, srv_message, target);

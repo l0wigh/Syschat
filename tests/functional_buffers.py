@@ -142,6 +142,14 @@ def main():
     pump(0.3)
     send("/?\n")
     pump(0.4)
+    for i in range(1, 11):
+        send("/join #c%d\n" % i)
+        pump(0.15)
+    pump(0.4)
+    last_raw = out.split(b"\x1b[H")[-1]
+    marks["active tab visible with 13 buffers"] = b":#c10" in last_raw
+    marks["tab bar shows it scrolled"] = strip_ansi(
+        last_raw.decode("utf-8", "replace")).startswith("<")
     send("/close #beta\n")
     pump(0.5)
     marks["beta_gone_from_tabs"] = b"#beta" not in out[-3000:]
@@ -214,7 +222,7 @@ def main():
         "PONG answered split PING": state["pong"] is not None and "split" in (state["pong"] or ""),
         "local echo sent": any("PRIVMSG #alpha :hello from tab test" in l for l in log),
         "help listed": "Commands list" in plain,
-        "timestamps on every line": re.search(r"\[\d\d:\d\d\] \[#alpha\] <bob>: alpha one", plain) is not None,
+        "timestamps on every line": re.search(r"\[\d\d:\d\d\] <bob>: alpha one", plain) is not None,
     })
     for k, v in checks.items():
         print(("OK   " if v else "FAIL ") + k)

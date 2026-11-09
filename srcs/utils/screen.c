@@ -52,33 +52,91 @@ static void	append_clipped(char *dst, size_t dstsz, const char *src, int width)
 	dst[used] = '\0';
 }
 
+/*
+** Tab bar: the active buffer must stay visible, so the bar scrolls instead of
+** truncating from the left. The right segment reserves its columns first, or
+** it would never be drawn on a loaded client.
+*/
 static size_t	tab_bar(t_syschat *syschat, char *dst, size_t dstsz, int width)
 {
 	size_t	used;
-	char	chunk[128];
-	int		len;
+	char	chunk[SYSCHAT_NAME_LEN + 16];
+	char	right[SYSCHAT_NAME_LEN + 24];
+	int		widths[SYSCHAT_MAX_BUFFERS];
+	int		right_len;
+	int		avail;
 	int		visible;
+	int		start;
+	int		i;
 
 	used = 0;
 	visible = 0;
 	if (dstsz > 1)
 		dst[0] = '\0';
-	for (int i = 0; i != syschat->buffer_count; i++)
+	right_len = 0;
+	right[0] = '\0';
+	if (width >= 40)
 	{
-		len = snprintf(chunk, sizeof(chunk), " %d:%s%s ", i + 1,
-				syschat->buffers[i].name,
-				syschat->buffers[i].unread ? "*" : "");
-		if (len < 0 || visible + len > width)
+		right_len = snprintf(right, sizeof(right), "%s - %d buf%s",
+			syschat->nickname ? syschat->nickname : "",
+			syschat->buffer_count, syschat->buffer_count > 1 ? "s" : "");
+		if (right_len < 0 || right_len > width / 2)
+			right_len = 0;
+	}
+	avail = width - (right_len ? right_len + 2 : 0);
+	if (avail < 8)
+		avail = 8;
+	for (i = 0; i != syschat->buffer_count; i++)
+		widths[i] = snprintf(chunk, sizeof(chunk), " %d:%s%s ", i + 1,
+			syschat->buffers[i].name, syschat->buffers[i].unread ? "*" : "");
+	start = 0;
+	if (syschat->active >= 0 && syschat->active < syschat->buffer_count)
+	{
+		int	room = avail;
+
+		for (i = syschat->active; i >= 0; i--)
+		{
+			room -= widths[i];
+			if (room < 0)
+				break ;
+			start = i;
+		}
+	}
+	if (start > 0)
+	{
+		used += snprintf(dst + used, dstsz - used, "%s<", TAB_IDLE);
+		visible++;
+	}
+	for (i = start; i != syschat->buffer_count; i++)
+	{
+		if (visible + widths[i] > avail)
 			break ;
-		visible += len;
+		visible += widths[i];
+		snprintf(chunk, sizeof(chunk), " %d:%s%s ", i + 1,
+			syschat->buffers[i].name, syschat->buffers[i].unread ? "*" : "");
 		used += snprintf(dst + used, dstsz - used, "%s%s",
-				i == syschat->active ? TAB_ACTIVE
-				: (syschat->buffers[i].unread ? TAB_UNREAD : TAB_IDLE),
-				chunk);
+			i == syschat->active ? TAB_ACTIVE
+				: (syschat->buffers[i].unread ? TAB_UNREAD : TAB_IDLE), chunk);
 		if (used >= dstsz - 1)
 			return (dstsz - 1);
 	}
+	if (i != syschat->buffer_count && visible < avail)
+	{
+		used += snprintf(dst + used, dstsz - used, "%s>", TAB_IDLE);
+		visible++;
+	}
 	used += snprintf(dst + used, dstsz - used, "%s", RESET);
+	if (right_len)
+	{
+		while (visible < width - right_len && used + 1 < dstsz)
+		{
+			dst[used++] = ' ';
+			visible++;
+		}
+		dst[used] = '\0';
+		used += snprintf(dst + used, dstsz - used, "\e[90m%s", right);
+		used += snprintf(dst + used, dstsz - used, "%s", RESET);
+	}
 	return (used);
 }
 
