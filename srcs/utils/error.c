@@ -17,7 +17,7 @@ void error_print(int err)
 		case 1:
 			fprintf(stderr, "you need to give <hostname> <nickname> arguments.\n"
 				"usage: ./syschat <hostname> <nickname> [port] "
-				"[--tls] [--no-tls] [--insecure]");
+				"[--tls] [--no-tls] [--insecure] [--tls-required]");
 			break;
 		case 2:
 			fprintf(stderr, "can't get the size of your terminal.");

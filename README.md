@@ -28,7 +28,7 @@ binary stays self-contained. With TLS off, the client only uses libc.
 
 ## How to use
 
-    Usage: ./syschat <host> <nick> [port] [--tls] [--no-tls] [--insecure]
+    Usage: ./syschat <host> <nick> [port] [--tls] [--no-tls] [--insecure] [--tls-required]
 
 The port is optional and defaults to 6667. It must be a full integer between
 1 and 65535: `./syschat irc.libera.chat fr0sted 7000` is valid, `... fr0sted
