@@ -265,6 +265,18 @@ void buffers_notice(t_syschat *syschat, unsigned server_id, const char *text)
 	if (server_id < (unsigned) syschat->conn_count && syschat->conns[server_id].alive
 		&& syschat->conns[server_id].label)
 		index = buffers_find_on(syschat, server_id, syschat->conns[server_id].label);
+	if (index == -1)
+	{
+		/*
+		** The server this notice is about is already gone (a drop, or
+		** /disconnect). Aim at the console of a surviving connection:
+		** falling back to `active` would print "B disconnected" inside
+		** A's #channel, which is worse than printing nothing.
+		*/
+		for (int i = 0; i != syschat->conn_count && index == -1; i++)
+			if (syschat->conns[i].alive && syschat->conns[i].label)
+				index = buffers_find_on(syschat, (unsigned) i, syschat->conns[i].label);
+	}
 	if (index == -1 && syschat->active >= 0 && syschat->active < syschat->buffer_count)
 		index = syschat->active;
 	if (index == -1 && syschat->buffer_count > 0)
