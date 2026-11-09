@@ -53,7 +53,7 @@ static int buffer_kind_of(t_syschat *syschat, unsigned server_id, const char *na
 		return (BUF_SERVER);
 	if (name[0] == '#')
 		return (BUF_CHANNEL);
-	if (!strcasecmp(name, "Liste"))
+	if (!strcasecmp(name, SYSCHAT_LIST_BUFFER))
 		return (BUF_LIST);
 	return (BUF_PRIVATE);
 }

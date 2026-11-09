@@ -112,7 +112,6 @@ int	syschat_conn_add(t_syschat *syschat, const char *label, const char *host,
 	bzero(conn, sizeof(t_conn));
 	conn->fd = -1;
 	conn->alive = 1;
-	conn->generation++;
 	conn->owner = syschat;
 	conn->label = strdup(label);
 	conn->hostname = strdup(host);
@@ -148,16 +147,21 @@ void	syschat_conn_close(t_syschat *syschat, int id)
 		close(conn->fd);
 		conn->fd = -1;
 	}
+	conn->net_len = 0;
+	conn->listing = 0;
+	conn->elist_mask = 0;
+	/*
+	** Relabel first, free after: buffers_relabel() reads conns[id].label
+	** to prefix the surviving tabs, so freeing it earlier would hand it a
+	** dangling pointer as soon as a second server keeps a homonymous tab.
+	*/
+	buffers_leave_server(syschat, (unsigned) id);
 	free(conn->label);
 	free(conn->hostname);
 	free(conn->nickname);
 	conn->label = NULL;
 	conn->hostname = NULL;
 	conn->nickname = NULL;
-	conn->net_len = 0;
-	conn->listing = 0;
-	conn->elist_mask = 0;
-	buffers_leave_server(syschat, (unsigned) id);
 	alive = 0;
 	for (int i = 0; i != syschat->conn_count; i++)
 		if (syschat->conns[i].alive)
@@ -229,7 +233,6 @@ void syschat_load_config(char **argv, int argc)
 	conn = &syschat.conns[0];
 	conn->fd = -1;
 	conn->alive = 1;
-	conn->generation = 1;
 	conn->owner = &syschat;
 	conn->label = strdup(positional[0]);
 	conn->hostname = strdup(positional[0]);
@@ -448,7 +451,16 @@ void syschat_read_network(t_conn *conn)
 				if (target[0] == '\0')
 					snprintf(target, SYSCHAT_NAME_LEN, "%s", conn->hostname);
 				index = buffers_route_on(syschat, sid, target);
-				buffers_append(syschat, index, srv);
+				if (index < 0)
+				{
+					/* 16 buffers are shared by every server: do not
+					** swallow the line, say that the table is full. */
+					if (syschat->active >= 0)
+						buffers_append(syschat, syschat->active,
+							"\e[0;31m-- no free buffer, line dropped --\e[0m");
+				}
+				else
+					buffers_append(syschat, index, srv);
 			}
 		}
 		memmove(conn->net, end + 1, conn->net_len - (int) (end + 1 - conn->net) + 1);
@@ -515,7 +527,7 @@ void syschat_loop(void)
 				syschat_read_network(conn);
 			if (conn->listing && time(NULL) - conn->listing_since >= 5)
 			{
-				int index = buffers_find_on(&syschat, (unsigned) i, "Liste");
+				int index = buffers_find_on(&syschat, (unsigned) i, SYSCHAT_LIST_BUFFER);
 
 				conn->listing = 0;
 				if (index != -1)

@@ -171,7 +171,7 @@ void server_handle_notice(t_syschat *syschat, t_conn *conn, char **parsed, char 
 			target, parsed[0], parsed[3]);
 }
 
-#define LIST_BUFFER "Liste"
+#define LIST_BUFFER SYSCHAT_LIST_BUFFER
 
 /*
 ** Returns -1 when the numeric is not part of a channel listing, 1 when the

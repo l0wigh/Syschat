@@ -479,7 +479,7 @@ void commands_handle_msg(t_syschat *syschat, char *command)
 		buffers_switch(syschat, index);
 }
 
-#define LIST_BUFFER "Liste"
+#define LIST_BUFFER SYSCHAT_LIST_BUFFER
 
 /*
 ** /list [motif] -- asks the server for its channel list into a "Liste" buffer.

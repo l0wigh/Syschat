@@ -49,6 +49,7 @@ void	syschat_terminal_restore(void);
 #define SYSCHAT_HISTORY 256
 #define SYSCHAT_LINE_LEN 1024
 #define SYSCHAT_NET_BUFFER 16384
+#define SYSCHAT_LIST_BUFFER "Liste"
 
 typedef struct s_syschat t_syschat;
 
@@ -56,14 +57,14 @@ typedef struct s_syschat t_syschat;
 ** One connection = one server. Slots live in syschat->conns[] and are
 ** STABLE: closing a server sets fd = -1 and keeps the slot, so the
 ** `server_id` stored in every buffer never ends up pointing at another
-** server. `generation` lets a late line from a dead connection be dropped
-** instead of resurrecting an orphan tab.
+** server. A late line from a dead connection cannot resurrect an orphan
+** tab: buffers_new_on() refuses a slot whose hostname is NULL or whose
+** alive flag is cleared.
 */
 typedef struct s_conn
 {
 	int			fd;				/* -1: the slot is free */
 	int			alive;
-	unsigned	generation;
 	char		*label;			/* name used by /server and srv/#chan */
 	char		*hostname;
 	char		*nickname;
