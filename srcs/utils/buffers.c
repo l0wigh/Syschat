@@ -255,6 +255,24 @@ void buffers_relabel(t_syschat *syschat)
 	}
 }
 
+void buffers_notice(t_syschat *syschat, unsigned server_id, const char *text)
+{
+	int	index;
+
+	if (!syschat || !text)
+		return ;
+	index = -1;
+	if (server_id < (unsigned) syschat->conn_count && syschat->conns[server_id].alive
+		&& syschat->conns[server_id].label)
+		index = buffers_find_on(syschat, server_id, syschat->conns[server_id].label);
+	if (index == -1 && syschat->active >= 0 && syschat->active < syschat->buffer_count)
+		index = syschat->active;
+	if (index == -1 && syschat->buffer_count > 0)
+		index = 0;
+	if (index != -1)
+		buffers_append(syschat, index, text);
+}
+
 /*
 ** Never lose an incoming message: an unknown target gets a buffer created
 ** on the fly (e.g. a private message from someone we never talked to).

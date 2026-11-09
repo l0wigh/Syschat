@@ -336,6 +336,7 @@ void commands_handle_connect(t_syschat *syschat, char **parsed)
 void commands_handle_disconnect(t_syschat *syschat, char **parsed)
 {
 	char	message[BF_SIZE];
+	char	label[SYSCHAT_NAME_LEN];
 	int		id;
 
 	if (parsed[1][0])
@@ -347,10 +348,15 @@ void commands_handle_disconnect(t_syschat *syschat, char **parsed)
 		commands_say(syschat, "disconnect: no such server");
 		return ;
 	}
+	snprintf(label, sizeof(label), "%s",
+		syschat->conns[id].label ? syschat->conns[id].label : "server");
 	bzero(message, BF_SIZE);
 	snprintf(message, BF_SIZE, "QUIT :%s\r\n", SYSCHAT_QUIT);
 	net_send(&syschat->conns[id], message, strlen(message));
 	syschat_conn_close(syschat, id);
+	/* Say it in a window that still exists; the caller repaints. */
+	snprintf(message, BF_SIZE, "\e[0;31m-- %s disconnected\e[0m", label);
+	buffers_notice(syschat, (unsigned) id, message);
 }
 
 /*

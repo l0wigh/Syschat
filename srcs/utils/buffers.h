@@ -31,6 +31,12 @@ int		buffers_route(t_syschat *syschat, const char *name);
 void	buffers_leave_server(t_syschat *syschat, unsigned server_id);
 /* Rebuilds the tab labels ("#chan" or "srv/#chan") after a change. */
 void	buffers_relabel(t_syschat *syschat);
+/*
+** Writes a notice where the user can actually see it: the console window of
+** the server it is about when that window still exists, otherwise the active
+** buffer, otherwise the first one. Never the window that is about to vanish.
+*/
+void	buffers_notice(t_syschat *syschat, unsigned server_id, const char *text);
 
 void	buffers_append(t_syschat *syschat, int index, const char *line);
 void	buffers_clear(t_syschat *syschat, int index);

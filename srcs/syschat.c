@@ -422,13 +422,18 @@ void syschat_read_network(t_conn *conn)
 		return ;
 	if (received == 0 || received == -2)
 	{
-		/* One server lost: its buffers go, the others keep running. */
 		char	line[BF_SIZE];
 
-		snprintf(line, sizeof(line), "\e[0;31m-- %s disconnected\e[0m", label);
-		if (syschat->active >= 0)
-			buffers_append(syschat, syschat->active, line);
+		/*
+		** One server lost: its buffers go, the others keep running. The
+		** notice is written AFTER the close, so buffers_notice() picks a
+		** window that still exists -- writing it before would hand the
+		** text to the very tab that is about to be freed.
+		*/
 		syschat_conn_close(syschat, (int) sid);
+		snprintf(line, sizeof(line), "\e[0;31m-- %s disconnected\e[0m", label);
+		buffers_notice(syschat, sid, line);
+		screen_draw(syschat, input);
 		return ;
 	}
 	if (received > SYSCHAT_NET_BUFFER - 1 - conn->net_len)
@@ -455,9 +460,8 @@ void syschat_read_network(t_conn *conn)
 				{
 					/* 16 buffers are shared by every server: do not
 					** swallow the line, say that the table is full. */
-					if (syschat->active >= 0)
-						buffers_append(syschat, syschat->active,
-							"\e[0;31m-- no free buffer, line dropped --\e[0m");
+					buffers_notice(syschat, sid,
+						"\e[0;31m-- no free buffer, line dropped --\e[0m");
 				}
 				else
 					buffers_append(syschat, index, srv);
@@ -569,6 +573,21 @@ int main(int argc, char **argv)
 	screen_draw(&syschat, input);
 	syschat_loop();
 
+	/*
+	** The loop also ends when the last server hangs up: nothing is left to
+	** draw into, so the explanation goes to stdout, after the event loop
+	** and before the terminal is handed back.
+	*/
+	{
+		int	alive;
+
+		alive = 0;
+		for (int i = 0; i != syschat.conn_count; i++)
+			if (syschat.conns[i].alive)
+				alive++;
+		if (!alive)
+			screen_message("\r\n-- no server left, exiting\r\n");
+	}
 	syschat_terminal_restore();
 	error_cleaning(&syschat);
 	return (0);
