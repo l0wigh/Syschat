@@ -8,8 +8,15 @@ set -e
 cd "$(dirname "$0")/.."
 
 ./build.sh >/dev/null
-echo "--- cli_args ---"
+echo "--- cli_args (release) ---"
 python3 tests/cli_args.py ./syschat
+
+# Same checks on the debug binary: -DSYSCHAT_NO_CATCHER makes a crash exit
+# 134/139 instead of looping, and argv handling has already differed there.
+./build.sh debug >/dev/null
+echo "--- cli_args (debug) ---"
+python3 tests/cli_args.py ./syschat_dbg
+
 echo "--- functional_buffers ---"
 python3 tests/functional_buffers.py
 

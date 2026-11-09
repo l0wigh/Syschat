@@ -76,7 +76,7 @@ or, on a machine without make (the only target exercised so far):
 
 Tests (no unit tests, functional checks only):
 
-    tests/run_all.sh                        # offline: cli_args + buffers
+    tests/run_all.sh                        # offline: release + debug + buffers
 
     ./build.sh && python3 tests/cli_args.py            # argument handling
     ./build.sh && python3 tests/functional_buffers.py  # mock IRC server + pty
