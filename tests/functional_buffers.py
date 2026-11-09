@@ -145,12 +145,15 @@ def main():
     send("/close #beta\n")
     pump(0.5)
     marks["beta_gone_from_tabs"] = b"#beta" not in out[-3000:]
-    proc.terminate()
-    pump(0.5)
+    # /exit must quit on its own: terminate() would hide a broken exit path.
+    send("/exit\n")
     try:
-        proc.wait(timeout=5)
+        marks["clean_exit"] = proc.wait(timeout=5) == 0
     except subprocess.TimeoutExpired:
         proc.kill()
+        proc.wait()
+        marks["clean_exit"] = False
+    pump(0.3)
 
     open("/tmp/syschat_raw.bin","wb").write(out)
     text = out.decode(errors="replace")
