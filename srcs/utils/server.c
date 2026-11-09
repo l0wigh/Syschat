@@ -3,19 +3,6 @@
 #include "ctcp.h"
 #include <sys/socket.h>
 
-static const char *MANAGED_COMMANDS[] = {
-	"PING",
-	"JOIN",
-	"QUIT",
-	"PART",
-	"PRIVMSG",
-	"NICK",
-	"KICK",
-	"MODE",
-	"NOTICE",
-	NULL
-};
-
 static void	target_chan(char *target, size_t size, char *value)
 {
 	char	*cr;

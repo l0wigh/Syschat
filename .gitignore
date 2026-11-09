@@ -1,3 +1,7 @@
 syschat
+syschat_dbg
+syschat_ubsan
 objs/
 *.o
+core
+core.*

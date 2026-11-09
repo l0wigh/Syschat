@@ -14,6 +14,13 @@ void segfault_catcher(int code)
 
 void segfault_catcher_set(int verbose)
 {
+#ifdef SYSCHAT_NO_CATCHER
+	/* Debug builds: let the process die so gdb/valgrind see the real frame. */
+	(void) verbose;
+	signal(SIGSEGV, SIG_DFL);
+	signal(SIGABRT, SIG_DFL);
+	return ;
+#endif
 	signal(SIGSEGV, segfault_catcher);
 	signal(SIGABRT, segfault_catcher);
 	if (verbose)
