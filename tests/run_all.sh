@@ -41,7 +41,7 @@ python3 tests/functional_colors.py
 # stays verified by manual frames only -- an incoming line is capped at 511
 # bytes, so it only triggers on a short or narrow terminal.
 echo "--- wrap_unit ---"
-${CC:-gcc} -std=c11 -Wall -Wextra -I. -o tests/wrap_unit tests/wrap_unit.c
+${CC:-gcc} -std=c11 -Wall -Wextra -Werror -I. -o tests/wrap_unit tests/wrap_unit.c
 ./tests/wrap_unit
 
 if [ "${SYSCHAT_NET_TESTS:-0}" = "1" ]; then
