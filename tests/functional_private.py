@@ -38,6 +38,8 @@ def serve(srv, ready):
                 target = line.split(" ", 2)[1]
                 if target == "alice":
                     state["private_ok"] = True
+                elif target == "zzz_no_such":
+                    conn.sendall(b":mock 401 tester zzz_no_such :No such nick\r\n")
     conn.close()
 
 
@@ -112,6 +114,10 @@ send("/msg alice deux mots sans deux points\n")
 pump(0.5)
 marks["/msg without colon keeps the whole text"] = any(
     l == "C>> PRIVMSG alice :deux mots sans deux points" for l in log)
+send("/msg zzz_no_such :rate\n")
+pump(1.0)
+marks["401 error shown in the tab where it was typed"] = "No such nick" in strip(
+    out.decode("utf-8", "replace"))
 marks["no raw junk sent to server"] = not any(
     l.startswith("C>>  ") or " :alice " in l for l in log)
 proc.terminate()

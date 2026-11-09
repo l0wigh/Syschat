@@ -209,8 +209,22 @@ int server_handle_message(t_syschat *syschat, char *srv_message, char *target)
 	bzero(srv_message, BF_SIZE);
 	if (is_numeric(parsed[1]))
 	{
+		const char	*body;
+		char		candidate[SYSCHAT_NAME_LEN];
+		int			len;
+
+		body = numeric_body(raw);
 		target_chan(target, SYSCHAT_NAME_LEN, syschat->hostname);
-		snprintf(srv_message, BF_SIZE, "\e[0;37m%s\e[0m", numeric_body(raw));
+		/* 401/403/404 name the target first: show the error where the user
+		** typed, not only in the server window nobody is looking at. */
+		len = (int) strcspn(body, " ");
+		if (len > 0 && len < SYSCHAT_NAME_LEN)
+		{
+			snprintf(candidate, sizeof(candidate), "%.*s", len, body);
+			if (buffers_find(syschat, candidate) != -1)
+				target_chan(target, SYSCHAT_NAME_LEN, candidate);
+		}
+		snprintf(srv_message, BF_SIZE, "\e[0;37m%s\e[0m", body);
 		displayed = 1;
 	}
 	else if (strcmp(parsed[0], "PING") == 0 || strcmp(parsed[1], "PING") == 0)
