@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "buffers.h"
+
 #include "mbedtls/ssl.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/ctr_drbg.h"
@@ -246,6 +248,22 @@ int	tls_pending(t_syschat *syschat)
 	return (mbedtls_ssl_get_bytes_avail(&st->ssl) > 0);
 }
 
+/*
+** A dropped line used to be invisible: every caller ignores the return value,
+** so a short SSL_write looked exactly like a delivered message.
+*/
+static void	tls_report_drop(t_syschat *syschat, int ret)
+{
+	char	line[192];
+
+	snprintf(line, sizeof(line),
+		"\e[0;31mTLS: message dropped, write failed (mbedTLS -0x%04x)\e[0m", -ret);
+	if (syschat->active >= 0 && syschat->active < syschat->buffer_count)
+		buffers_append(syschat, syschat->active, line);
+	else
+		fprintf(stderr, "%s\n", line);
+}
+
 int	tls_send(t_syschat *syschat, const char *buf, size_t len)
 {
 	t_tls_state	*st;
@@ -262,7 +280,10 @@ int	tls_send(t_syschat *syschat, const char *buf, size_t len)
 		ret = mbedtls_ssl_write(&st->ssl, (const unsigned char *) buf, len);
 	st->bio.block_ms = saved;
 	if (ret < 0)
+	{
+		tls_report_drop(syschat, ret);
 		return (-1);
+	}
 	return (ret);
 }
 

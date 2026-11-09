@@ -48,8 +48,10 @@ that port means TLS on every network worth the name, so
 | `--tls` / `-tls` | force TLS on any port (`./syschat host nick 6667 --tls`) |
 | `--no-tls` / `-no-tls` | force plaintext, even on 6697 |
 | `--insecure` / `-insecure` | TLS without certificate verification (self-signed bouncer) |
+| `--tls-required` / `-tls-required` | strict: never fall back to plaintext |
 | `SYSCHAT_TLS=1` / `=0` | same as `--tls` / `--no-tls` |
 | `SYSCHAT_TLS_NO_VERIFY=1` | same as `--insecure` |
+| `SYSCHAT_TLS_STRICT=1` | same as `--tls-required` |
 
 The first line of the server buffer tells you what you got, e.g.
 `Connected (TLSv1.3, TLS1-3-CHACHA20-POLY1305-SHA256, cert verified)` or
@@ -64,6 +66,20 @@ If the handshake fails for any reason (port is plaintext, certificate
 rejected, server speaks another protocol), syschat **does not exit**: it
 reconnects in plaintext and prints, in red, that the session is not
 encrypted. You can still connect to a server that does not do TLS.
+
+### Strict mode
+
+That fallback is a convenience, but it is also a free downgrade for anyone
+able to cut the handshake. `--tls-required` (`SYSCHAT_TLS_STRICT=1`) removes
+it: the handshake failure becomes fatal, the reason goes to stderr, and the
+exit code is **10**. Nothing is ever sent in clear.
+
+- `--tls-required` and `--insecure` are orthogonal: strict is "never
+  plaintext", not "verify everything". A self-signed bouncer works with both.
+- `--tls-required` with `--no-tls` is a contradiction and is refused at
+  startup with exit code **11**, rather than silently picking a winner.
+- "Not being blocked" stays available through `--no-tls` (a deliberate
+  choice) instead of through an accidental downgrade.
 
 Join a channel with /join #channel and start to talk.
 
@@ -82,6 +98,10 @@ segfault handler disabled so gdb/valgrind stop on the real frame and a core
 can be written). `./build.sh ubsan` adds `-fsanitize=undefined`; on this
 toolchain the first undefined behaviour **panics and exits with 134** instead
 of warning and continuing — that is the sanitiser, not a syschat crash.
+
+If a line cannot be written (socket stuck for 200 ms, peer gone), the drop is
+reported in the active buffer in red — previously it was a silent `-1` that
+every caller ignored.
 
 Debugging: `SYSCHAT_DEBUG=/tmp/syschat.log ./syschat <host> <nick>` appends
 every raw incoming line and the buffer it was routed to. The trace holds the
