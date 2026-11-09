@@ -76,8 +76,19 @@ void server_handle_part(t_syschat *syschat, t_conn *conn, char **parsed, char *s
 	if (conn->nickname && strcasecmp(parsed[0], conn->nickname) == 0)
 	{
 		index = buffers_find_on(syschat, (unsigned) (conn - syschat->conns), target);
-		if (index != -1)
-			syschat->buffers[index].joined = 0;
+		if (index == -1)
+		{
+			/*
+			** /close already dropped this window: routing the echo by its
+			** channel name would recreate the tab we just closed. Say it
+			** in the server window instead.
+			*/
+			target_chan(target, SYSCHAT_NAME_LEN,
+				conn->hostname ? conn->hostname : "");
+			snprintf(srv_message, BF_SIZE, "-!- you left %s", parsed[2]);
+			return ;
+		}
+		syschat->buffers[index].joined = 0;
 	}
 	snprintf(srv_message, BF_SIZE, "-!- %s%s\e[0m just left", nick_color(parsed[0]), parsed[0]);
 }

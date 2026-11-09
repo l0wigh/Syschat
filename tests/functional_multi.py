@@ -101,6 +101,8 @@ def session(conn, name):
                     conn.sendall((":%s!u@h JOIN :%s\r\n" % (nick, chan)).encode())
                     if chan == "#chan" and not st.get("joined_once"):
                         st["joined_once"] = True
+                elif cmd == "PART" and len(parts) > 1:
+                    conn.sendall((":%s!u@h PART %s\r\n" % (nick, parts[1])).encode())
                 elif cmd == "QUIT":
                     st["quit"] = True
     finally:
@@ -233,6 +235,19 @@ def main():
     pump(0.6)
     new = STATE["A"]["log"][before:]
     checks["no PRIVMSG from a server console window"] = not any("PRIVMSG" in l for l in new)
+
+    # --- a /close must not be undone by the server's PART echo --------
+    send("/server %s\n" % A_LABEL)
+    pump(0.3)
+    send("/join #gone\n")
+    pump(0.6)
+    send("/close #gone\n")
+    pump(1.2)                   # the mock echoes our own PART back
+    checks["closed channel is not resurrected by its PART echo"] = \
+        "#gone" not in last_frame().split("\r\n")[0]
+    send("/server %s\n" % A_LABEL)
+    pump(0.4)
+    checks["the echo is reported in the server window"] = "you left #gone" in last_frame()
 
     # --- a server that drops must explain itself somewhere visible -----
     send("/connect two %s %d\n" % (HOST, PORT_B))
