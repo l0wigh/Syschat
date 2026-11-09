@@ -125,29 +125,31 @@ def main():
     pump(0.3)
     send("hello from")
     pump(0.3)
-    marks["typed_visible"] = "#alpha > hello from" in strip_ansi(out.decode(errors="replace"))
+    marks["typed_visible"] = "[#alpha] <tester> hello from" in strip_ansi(out.decode(errors="replace"))
     send(" tab test\n")
     pump(0.4)
-    marks["prompt_alpha"] = b"#alpha > hello from tab test" in out
+    marks["prompt_alpha"] = "[#alpha] <tester> hello from tab test" in strip_ansi(out.decode(errors="replace"))
     send("\t")
     pump(0.3)
-    marks["tab_to_beta"] = b"#beta > " in out[-4000:]
+    marks["tab_to_beta"] = "[#beta] <tester> " in strip_ansi(out[-4000:].decode(errors="replace"))
     send("\x1b[Z")
     pump(0.3)
-    marks["shifttab_back_alpha"] = b"#alpha > " in out[-4000:]
-    marks["unread_alpha_while_on_beta"] = b"#alpha*" in out[-8000:]
+    marks["shifttab_back_alpha"] = "[#alpha] <tester> " in strip_ansi(out[-4000:].decode(errors="replace"))
+    marks["unread_alpha_while_on_beta"] = "#alpha*" in strip_ansi(out[-8000:].decode(errors="replace"))
     send("/next\n")
     pump(0.3)
     send("/prev\n")
     pump(0.3)
     send("/?\n")
     pump(0.4)
+    # Long names on purpose: the bar must scroll to keep the active tab
+    # visible, which short names would not trigger on a 100-column pty.
     for i in range(1, 11):
-        send("/join #c%d\n" % i)
+        send("/join #chan-with-a-long-name-%d\n" % i)
         pump(0.15)
     pump(0.4)
     last_raw = out.split(b"\x1b[H")[-1]
-    marks["active tab visible with 13 buffers"] = b":#c10" in last_raw
+    marks["active tab visible with 13 buffers"] = b"#chan-with-a-long-name-10" in last_raw
     marks["tab bar shows it scrolled"] = strip_ansi(
         last_raw.decode("utf-8", "replace")).startswith("<")
     send("/close #beta\n")

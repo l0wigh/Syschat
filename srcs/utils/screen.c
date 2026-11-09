@@ -63,7 +63,6 @@ static void	append_clipped(char *dst, size_t dstsz, const char *src, int width)
 static size_t	tab_bar(t_syschat *syschat, char *dst, size_t dstsz, int width)
 {
 	size_t	used;
-	char	chunk[SYSCHAT_NAME_LEN + 16];
 	char	right[SYSCHAT_NAME_LEN + 24];
 	int		widths[SYSCHAT_MAX_BUFFERS];
 	int		right_len;
@@ -80,8 +79,7 @@ static size_t	tab_bar(t_syschat *syschat, char *dst, size_t dstsz, int width)
 	right[0] = '\0';
 	if (width >= 40)
 	{
-		right_len = snprintf(right, sizeof(right), "%s - %d buf%s",
-			syschat->nickname ? syschat->nickname : "",
+		right_len = snprintf(right, sizeof(right), "%d buf%s",
 			syschat->buffer_count, syschat->buffer_count > 1 ? "s" : "");
 		if (right_len < 0 || right_len > width / 2)
 			right_len = 0;
@@ -90,8 +88,22 @@ static size_t	tab_bar(t_syschat *syschat, char *dst, size_t dstsz, int width)
 	if (avail < 8)
 		avail = 8;
 	for (i = 0; i != syschat->buffer_count; i++)
-		widths[i] = snprintf(chunk, sizeof(chunk), " %d:%s%s ", i + 1,
-			syschat->buffers[i].name, syschat->buffers[i].unread ? "*" : "");
+	{
+		/* active: " name " (no brackets), others: " [name]". */
+		widths[i] = (int)strlen(syschat->buffers[i].name) + 2
+			+ (i == syschat->active ? 0 : 1)
+			+ (syschat->buffers[i].unread ? 1 : 0);
+	}
+	/* Not even the active tab fits: keep a position marker, never a blank
+	** bar the user cannot read anything from. */
+	if (syschat->active >= 0 && syschat->active < syschat->buffer_count
+		&& widths[syschat->active] > avail)
+	{
+		used += snprintf(dst + used, dstsz - used, "%s%d/%d%s%s", TAB_ACTIVE,
+			syschat->active + 1, syschat->buffer_count,
+			syschat->buffers[syschat->active].unread ? "*" : "", RESET);
+		return (used);
+	}
 	start = 0;
 	if (syschat->active >= 0 && syschat->active < syschat->buffer_count)
 	{
@@ -115,11 +127,14 @@ static size_t	tab_bar(t_syschat *syschat, char *dst, size_t dstsz, int width)
 		if (visible + widths[i] > avail)
 			break ;
 		visible += widths[i];
-		snprintf(chunk, sizeof(chunk), " %d:%s%s ", i + 1,
-			syschat->buffers[i].name, syschat->buffers[i].unread ? "*" : "");
-		used += snprintf(dst + used, dstsz - used, "%s%s",
-			i == syschat->active ? TAB_ACTIVE
-				: (syschat->buffers[i].unread ? TAB_UNREAD : TAB_IDLE), chunk);
+		if (i == syschat->active)
+			used += snprintf(dst + used, dstsz - used, "%s %s %s",
+				TAB_ACTIVE, syschat->buffers[i].name, RESET);
+		else
+			used += snprintf(dst + used, dstsz - used, "%s [%s%s]%s",
+				syschat->buffers[i].unread ? TAB_UNREAD : TAB_IDLE,
+				syschat->buffers[i].name,
+				syschat->buffers[i].unread ? "*" : "", RESET);
 		if (used >= dstsz - 1)
 			return (dstsz - 1);
 	}
@@ -202,11 +217,21 @@ void	screen_draw(t_syschat *syschat, const char *input)
 		for (int i = 0; i != room; i++)
 			used += snprintf(out + used, size - used, "\033[K\r\n");
 	if (syschat->active >= 0 && syschat->active < syschat->buffer_count)
-		used += snprintf(out + used, size - used, "\033[K%s%s > %s\033[K",
-				TAB_ACTIVE, syschat->buffers[syschat->active].name, RESET);
+	{
+		const char	*name = syschat->buffers[syschat->active].name;
+		const char	*nick = syschat->nickname ? syschat->nickname : "";
+		/* "[#chan] " is strlen+3 visible, "<nick> " is strlen+4. */
+		int			plen = (int)(strlen(name) + strlen(nick)) + 7;
+
+		used += snprintf(out + used, size - used,
+				"\033[K\033[90m[%s]\033[0m \033[1;37m<%s>\033[0m ", name, nick);
+		append_clipped(clip, sizeof(clip), input ? input : "", cols - plen);
+	}
 	else
+	{
 		used += snprintf(out + used, size - used, "\033[K> ");
-	append_clipped(clip, sizeof(clip), input ? input : "", cols - 2);
+		append_clipped(clip, sizeof(clip), input ? input : "", cols - 2);
+	}
 	used += snprintf(out + used, size - used, "%s\033[K", clip);
 	write(1, out, used);
 	free(out);
