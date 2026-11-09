@@ -3,7 +3,7 @@
 #include "ctcp.h"
 #include <sys/socket.h>
 
-static void	target_chan(char *target, size_t size, char *value)
+static void	target_chan(char *target, size_t size, const char *value)
 {
 	char	*cr;
 
@@ -165,24 +165,6 @@ static int is_numeric(const char *token)
 	return (1);
 }
 
-/*
-** ":server 353 me = #chan :@nick" -> "= #chan :@nick"
-*/
-static const char *numeric_body(char *message)
-{
-	const char *body;
-
-	body = message[0] == ':' ? strchr(message, ' ') : message;
-	for (int i = 0; body && *body && i != 2; i++)
-		body = strchr(body + 1, ' ');
-	while (body && *body == ' ')
-		body++;
-	if (!body)
-		return ("");
-	if (*body == ':')
-		body++;
-	return (body);
-}
 
 /*
 ** Returns 1 when `srv_message` holds something to display, 0 otherwise.
@@ -209,22 +191,59 @@ int server_handle_message(t_syschat *syschat, char *srv_message, char *target)
 	bzero(srv_message, BF_SIZE);
 	if (is_numeric(parsed[1]))
 	{
-		const char	*body;
-		char		candidate[SYSCHAT_NAME_LEN];
-		int			len;
+		const char	*target_name;
+		const char	*text;
+		int			code;
+		int			text_index;
 
-		body = numeric_body(raw);
-		target_chan(target, SYSCHAT_NAME_LEN, syschat->hostname);
-		/* 401/403/404 name the target first: show the error where the user
-		** typed, not only in the server window nobody is looking at. */
-		len = (int) strcspn(body, " ");
-		if (len > 0 && len < SYSCHAT_NAME_LEN)
+		code = atoi(parsed[1]);
+		/* Only numerics that designate a buffer: errors about a target and
+		** channel facts. Everything else stays in the server window. */
+		target_name = NULL;
+		switch (code)
 		{
-			snprintf(candidate, sizeof(candidate), "%.*s", len, body);
-			if (buffers_find(syschat, candidate) != -1)
-				target_chan(target, SYSCHAT_NAME_LEN, candidate);
+			case 353:
+				target_name = parsed[4];
+				break ;
+			case 324: case 329: case 331: case 332: case 333: case 341:
+			case 352: case 366: case 367: case 368:
+			case 401: case 403: case 404: case 405: case 407: case 437:
+			case 441: case 442: case 443: case 474: case 475: case 477:
+			case 482:
+				target_name = parsed[3];
+				break ;
+			default:
+				break ;
 		}
-		snprintf(srv_message, BF_SIZE, "\e[0;37m%s\e[0m", body);
+		target_chan(target, SYSCHAT_NAME_LEN, syschat->hostname);
+		if (target_name && buffers_find(syschat, target_name) != -1)
+			target_chan(target, SYSCHAT_NAME_LEN, target_name);
+		text_index = 3;
+		for (int i = 15; i >= 3; i--)
+			if (parsed[i][0])
+			{
+				text_index = i;
+				break ;
+			}
+		text = parsed[text_index];
+		if (code == 353)
+			snprintf(srv_message, BF_SIZE, "\e[0;37mUsers: %s\e[0m", text);
+		else if (code == 332)
+			snprintf(srv_message, BF_SIZE, "\e[0;37mTopic: %s\e[0m", text);
+		else if (code == 324)
+			snprintf(srv_message, BF_SIZE, "\e[0;37mModes: %s\e[0m", parsed[4]);
+		else if (code == 329)
+			snprintf(srv_message, BF_SIZE, "\e[0;37mCreated: %s\e[0m", parsed[4]);
+		else if (code == 333)
+		{
+			char	setter[SYSCHAT_NAME_LEN];
+
+			snprintf(setter, sizeof(setter), "%s", parsed[4]);
+			setter[strcspn(setter, "!")] = '\0';
+			snprintf(srv_message, BF_SIZE, "\e[0;37mTopic set by %s\e[0m", setter);
+		}
+		else
+			snprintf(srv_message, BF_SIZE, "\e[0;37m%s\e[0m", text);
 		displayed = 1;
 	}
 	else if (strcmp(parsed[0], "PING") == 0 || strcmp(parsed[1], "PING") == 0)

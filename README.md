@@ -81,6 +81,7 @@ Tests (no unit tests, functional checks only):
     ./build.sh && python3 tests/cli_args.py            # argument handling
     ./build.sh && python3 tests/functional_buffers.py  # mock IRC server + pty
     ./build.sh && python3 tests/functional_private.py  # private messages
+    ./build.sh && python3 tests/functional_numerics.py # server numerics
     SYSCHAT_NET_TESTS=1 python3 tests/network_smoke.py # real network, opt-in
 
 `SYSCHAT_NET_TESTS=1` is mandatory for the network test: without it the

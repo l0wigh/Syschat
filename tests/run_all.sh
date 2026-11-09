@@ -23,6 +23,9 @@ python3 tests/functional_buffers.py
 echo "--- functional_private ---"
 python3 tests/functional_private.py
 
+echo "--- functional_numerics ---"
+python3 tests/functional_numerics.py
+
 if [ "${SYSCHAT_NET_TESTS:-0}" = "1" ]; then
 	echo "--- network_smoke (real network) ---"
 	python3 tests/network_smoke.py
