@@ -249,10 +249,22 @@ def main():
     pump(0.3)
     send("/join #gone\n")
     pump(0.6)
+    # Line 0 is the servers bar and never holds a channel name: reading it
+    # made this assertion vacuous. The buffer bar is line 1, and the chip has
+    # to be there BEFORE the /close for its absence to mean anything.
+    def buffer_chips():
+        rows = last_frame().split("\r\n")
+        if len(rows) < 2:
+            return []
+        return [t for t in rows[1].split() if t.startswith("#")]
+
+    before_chips = buffer_chips()
     send("/close #gone\n")
     pump(1.2)                   # the mock echoes our own PART back
+    after_chips = buffer_chips()
     checks["closed channel is not resurrected by its PART echo"] = \
-        "#gone" not in last_frame().split("\r\n")[0]
+        "#gone" in before_chips and "#gone" not in after_chips \
+        and len(after_chips) == len(before_chips) - 1
     send("/server %s\n" % A_LABEL)
     pump(0.4)
     checks["the echo is reported in the server window"] = "you left #gone" in last_frame()

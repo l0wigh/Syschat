@@ -83,8 +83,7 @@ void server_handle_part(t_syschat *syschat, t_conn *conn, char **parsed, char *s
 			** channel name would recreate the tab we just closed. Say it
 			** in the server window instead.
 			*/
-			target_chan(target, SYSCHAT_NAME_LEN,
-				conn->hostname ? conn->hostname : "");
+			target_chan(target, SYSCHAT_NAME_LEN, syschat_conn_name(conn));
 			snprintf(srv_message, BF_SIZE, "-!- you left %s", parsed[2]);
 			return ;
 		}

@@ -101,7 +101,7 @@ int	network_connect_server(t_syschat *syschat, t_conn *conn, int fatal)
 		"\e[0;31mTLS: handshake failed (%s) -- falling back to plaintext, "
 		"this session is NOT encrypted\e[0m", reason);
 	index = buffers_find_on(syschat, (unsigned) (conn - syschat->conns),
-		conn->label ? conn->label : conn->hostname);
+		syschat_conn_name(conn));
 	if (index == -1)
 		index = syschat->active;
 	buffers_append(syschat, index, line);
