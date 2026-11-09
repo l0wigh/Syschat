@@ -55,8 +55,17 @@ typedef struct s_syschat
 	t_buffer			buffers[SYSCHAT_MAX_BUFFERS];
 	int					buffer_count;
 	int					active;
-	int					net_socket;
-	int					port;
+	int						net_socket;
+	int						port;
+	/*
+	** TLS is opt-in (port 6697 or --tls) and never on by default on 6667.
+	** `tls_state` stays opaque: only utils/tls.c includes the mbedTLS
+	** headers, every other translation unit just sees an int.
+	*/
+	int						tls;
+	int						tls_active;
+	int						tls_insecure;
+	void					*tls_state;
 	int					listing;
 	time_t				listing_since;
 	int					list_received;

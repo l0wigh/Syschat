@@ -1,5 +1,6 @@
 #include "error.h"
 #include "buffers.h"
+#include "tls.h"
 
 void error_exit(t_syschat *syschat, int err)
 {
@@ -14,7 +15,9 @@ void error_print(int err)
 	switch (err)
 	{
 		case 1:
-			fprintf(stderr, "you need to give <hostname> <nickname> arguments.");
+			fprintf(stderr, "you need to give <hostname> <nickname> arguments.\n"
+				"usage: ./syschat <hostname> <nickname> [port] "
+				"[--tls] [--no-tls] [--insecure]");
 			break;
 		case 2:
 			fprintf(stderr, "can't get the size of your terminal.");
@@ -54,7 +57,10 @@ void error_cleaning(t_syschat *syschat)
 	syschat->elist_mask = 0;
 
 	if (syschat->net_socket)
+	{
+		tls_close(syschat);
 		close(syschat->net_socket);
+	}
 	if (syschat->hostname)
 		free(syschat->hostname);
 	if (syschat->nickname)

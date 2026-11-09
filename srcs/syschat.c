@@ -1,5 +1,6 @@
 #include "syschat.h"
 #include "utils/network.h"
+#include "utils/tls.h"
 #include "utils/error.h"
 #include "utils/commands.h"
 #include "utils/server.h"
@@ -17,24 +18,66 @@ static int input_len = 0;
 // TODO: Fix stack smashing when pasting too much characters
 // TODO: Use write instead of printf when it's possible
 
-void syschat_load_config(char **argv, int argc_port)
+/*
+** Flags are recognised anywhere on the command line, positionals keep their
+** historic order (<hostname> <nickname> [port]) so every documented command
+** still works unchanged. TLS is never on by default on 6667: it is enabled
+** by --tls, or implicitly when the port is 6697.
+*/
+void syschat_load_config(char **argv, int argc)
 {
+	char	*positional[3];
+	char	*env;
+	int		i;
+	int		pos;
+	int		force_tls;
+	int		no_tls;
+
 	bzero(&syschat, sizeof(t_syschat));
-	syschat.hostname = strdup(argv[1]);
-	syschat.nickname = strdup(argv[2]);
-	if (argc_port > 3)
+	bzero(positional, sizeof(positional));
+	pos = 0;
+	force_tls = 0;
+	no_tls = 0;
+	for (i = 1; i < argc; i++)
+	{
+		if (!strcmp(argv[i], "--tls") || !strcmp(argv[i], "-tls"))
+			force_tls = 1;
+		else if (!strcmp(argv[i], "--no-tls") || !strcmp(argv[i], "-no-tls"))
+			no_tls = 1;
+		else if (!strcmp(argv[i], "--insecure") || !strcmp(argv[i], "-insecure"))
+			syschat.tls_insecure = 1;
+		else if (pos < 3)
+			positional[pos++] = argv[i];
+	}
+	if (pos < 2)
+		error_exit(NULL, 1);
+	syschat.hostname = strdup(positional[0]);
+	syschat.nickname = strdup(positional[1]);
+	if (pos > 2)
 	{
 		char	*end;
 		long	parsed;
 
 		end = NULL;
-		parsed = strtol(argv[3], &end, 10);
-		if (end == argv[3] || *end != '\0' || parsed < 1 || parsed > 65535)
+		parsed = strtol(positional[2], &end, 10);
+		if (end == positional[2] || *end != '\0' || parsed < 1 || parsed > 65535)
 			error_exit(NULL, 9);
 		syschat.port = (int) parsed;
 	}
 	else
 		syschat.port = 6667;
+	syschat.tls = (syschat.port == 6697);
+	if ((env = getenv("SYSCHAT_TLS")) != NULL && env[0] != '\0')
+		syschat.tls = !strcmp(env, "1") || !strcmp(env, "true") || !strcmp(env, "yes");
+	if ((env = getenv("SYSCHAT_TLS_NO_VERIFY")) != NULL
+		&& (!strcmp(env, "1") || !strcmp(env, "true") || !strcmp(env, "yes")))
+		syschat.tls_insecure = 1;
+	if (force_tls)
+		syschat.tls = 1;
+	if (no_tls)
+		syschat.tls = 0;
+	if (syschat.tls_insecure && !no_tls)
+		syschat.tls = 1;
 	syschat.active = -1;
 	buffers_new(&syschat, syschat.hostname);
 	buffers_switch(&syschat, 0);
@@ -247,7 +290,9 @@ void syschat_loop(void)
 	{
 		fds[0].revents = 0;
 		fds[1].revents = 0;
-		ret = poll(fds, 2, 500);
+		/* With TLS a record can hold more bytes than one chunk, so the
+		** socket itself may stay silent while decrypted data is waiting. */
+		ret = poll(fds, 2, net_pending(&syschat) ? 0 : 500);
 		if (ret < 0)
 			continue ;
 		if (fds[0].revents & POLLIN)
@@ -256,7 +301,7 @@ void syschat_loop(void)
 			if (ret > 0)
 				syschat_handle_input(buffer, ret);
 		}
-		if (fds[1].revents & (POLLIN | POLLHUP | POLLERR))
+		if (net_pending(&syschat) || (fds[1].revents & (POLLIN | POLLHUP | POLLERR)))
 			syschat_read_network();
 		if (syschat.listing && time(NULL) - syschat.listing_since >= 5)
 		{
@@ -292,7 +337,16 @@ int main(int argc, char **argv)
 	network_connect_server(&syschat);
 	syschat_say_hello();
 
-	syschat_echo("Connected. /join #channel to start, Tab / Shift-Tab to switch, /? for help.");
+	{
+		char	banner[256];
+		char	info[160];
+
+		tls_summary(&syschat, info, sizeof(info));
+		snprintf(banner, sizeof(banner),
+			"Connected (%s). /join #channel to start, Tab / Shift-Tab to switch, /? for help.",
+			info);
+		syschat_echo(banner);
+	}
 	screen_draw(&syschat, input);
 	syschat_loop();
 

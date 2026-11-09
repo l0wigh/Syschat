@@ -7,6 +7,7 @@ TOTEM 		= 🦁
 
 FILES = syschat \
 		utils/network \
+		utils/tls \
 		utils/error \
 		utils/commands \
 		utils/server \

@@ -1,10 +1,12 @@
 #include "network.h"
+#include "buffers.h"
+#include "tls.h"
 
 #include <errno.h>
 
 static int family;
 
-void network_connect_server(t_syschat *syschat)
+static void	network_connect_plain(t_syschat *syschat)
 {
 	char ip[INET6_ADDRSTRLEN];
 
@@ -35,6 +37,59 @@ void network_connect_server(t_syschat *syschat)
 	}
 }
 
+void	network_connect_server(t_syschat *syschat)
+{
+	char	reason[256];
+	char	line[512];
+
+	network_connect_plain(syschat);
+	if (!syschat->tls)
+		return ;
+	if (tls_connect(syschat, reason, sizeof(reason)) == 0)
+		return ;
+	/*
+	** A TLS failure must never lock the user out of IRC: fall back to the
+	** plaintext connection used before this feature, and say so in clear
+	** so nobody believes the session is encrypted when it is not.
+	*/
+	close(syschat->net_socket);
+	syschat->net_socket = 0;
+	network_connect_plain(syschat);
+	bzero(line, sizeof(line));
+	snprintf(line, sizeof(line),
+		"\e[0;31mTLS: handshake failed (%s) -- falling back to plaintext, "
+		"this session is NOT encrypted\e[0m", reason);
+	buffers_append(syschat, 0, line);
+}
+
+int	net_send(t_syschat *syschat, const char *buf, size_t len)
+{
+	if (syschat->tls_active)
+		return (tls_send(syschat, buf, len));
+	return (send(syschat->net_socket, buf, len, MSG_DONTWAIT));
+}
+
+int	net_recv(t_syschat *syschat, char *buf, size_t len)
+{
+	ssize_t	ret;
+
+	if (syschat->tls_active)
+		return (tls_recv(syschat, buf, len));
+	ret = recv(syschat->net_socket, buf, len, 0);
+	if (ret >= 0)
+		return ((int) ret);
+	if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+		return (-1);
+	return (-2);
+}
+
+int	net_pending(t_syschat *syschat)
+{
+	if (syschat->tls_active)
+		return (tls_pending(syschat));
+	return (0);
+}
+
 int network_get_ip(t_syschat *syschat, char *ip)
 {
 	void *addr = NULL;
@@ -58,21 +113,4 @@ int network_get_ip(t_syschat *syschat, char *ip)
 	freeaddrinfo(res);
 
 	return (0);
-}
-
-int	net_send(t_syschat *syschat, const char *buf, size_t len)
-{
-	return (send(syschat->net_socket, buf, len, MSG_DONTWAIT));
-}
-
-int	net_recv(t_syschat *syschat, char *buf, size_t len)
-{
-	ssize_t	ret;
-
-	ret = recv(syschat->net_socket, buf, len, 0);
-	if (ret >= 0)
-		return ((int) ret);
-	if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
-		return (-1);
-	return (-2);
 }

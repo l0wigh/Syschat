@@ -45,6 +45,7 @@ esac
 
 SRCS="srcs/syschat.c
 srcs/utils/network.c
+srcs/utils/tls.c
 srcs/utils/error.c
 srcs/utils/commands.c
 srcs/utils/server.c
