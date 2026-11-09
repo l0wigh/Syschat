@@ -136,9 +136,12 @@ void server_handle_kick(t_syschat *syschat, char **parsed, char *srv_message, ch
 void server_handle_mode(t_syschat *syschat, char **parsed, char *srv_message, char *target)
 {
 	bzero(srv_message, BF_SIZE);
-	target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
+	if (parsed[2][0] != '#')
+		target_chan(target, SYSCHAT_NAME_LEN, syschat->hostname);
+	else
+		target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
 	snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] \e[0;32m%s\e[0m changed \e[0;35m%s\e[0m modes to \e[0;36m%s\e[0m",
-		syschat->hostname, parsed[0], target, parsed[3]);
+		target, parsed[0], target, parsed[3]);
 }
 
 void server_handle_notice(t_syschat *syschat, char **parsed, char *srv_message, char *target)
@@ -147,8 +150,12 @@ void server_handle_notice(t_syschat *syschat, char **parsed, char *srv_message, 
 	bzero(srv_message, BF_SIZE);
 	if (parsed[2][0] == '#')
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
+	else if (parsed[2][0] == '*' || (syschat->nickname && strcasecmp(parsed[2], syschat->nickname) == 0))
+		target_chan(target, SYSCHAT_NAME_LEN, syschat->hostname);
 	else
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[0]);
+	if (strcasecmp(target, syschat->nickname) == 0)
+		target_chan(target, SYSCHAT_NAME_LEN, syschat->hostname);
 	if (parsed[3][0] == 1)
 		snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] CTCP answer: \e[0;36m%s\e[0m",
 			parsed[0], parsed[3]);
@@ -161,25 +168,65 @@ void server_handle_notice(t_syschat *syschat, char **parsed, char *srv_message, 
 ** Returns 1 when `srv_message` holds something to display, 0 otherwise.
 ** `target` receives the buffer name the message belongs to.
 */
+static int is_numeric(const char *token)
+{
+	if (!token || !token[0])
+		return (0);
+	for (int i = 0; token[i]; i++)
+		if (token[i] < '0' || token[i] > '9')
+			return (0);
+	return (1);
+}
+
+/*
+** ":server 353 me = #chan :@nick" -> "= #chan :@nick"
+*/
+static const char *numeric_body(char *message)
+{
+	const char *body;
+
+	body = message[0] == ':' ? strchr(message, ' ') : message;
+	for (int i = 0; body && *body && i != 2; i++)
+		body = strchr(body + 1, ' ');
+	while (body && *body == ' ')
+		body++;
+	if (!body)
+		return ("");
+	if (*body == ':')
+		body++;
+	return (body);
+}
+
+/*
+** Returns 1 when `srv_message` holds something to display, 0 otherwise.
+** `target` receives the buffer name the message belongs to.
+*/
 int server_handle_message(t_syschat *syschat, char *srv_message, char *target)
 {
-	char	**parsed;
-	int		displayed;
-	int		known;
+	char		**parsed;
+	int			displayed;
+	char		raw[BF_SIZE * 2];
+	FILE		*debug_file;
 
 	displayed = 0;
+	bzero(raw, sizeof(raw));
+	snprintf(raw, sizeof(raw), "%s", srv_message);
 	bzero(target, SYSCHAT_NAME_LEN);
-	known = 0;
-	for (int i = 0; MANAGED_COMMANDS[i]; i++)
-		if (strstr(srv_message, MANAGED_COMMANDS[i]))
-			known = 1;
-	if (!known)
+	if (getenv("SYSCHAT_DEBUG")
+		&& (debug_file = fopen(getenv("SYSCHAT_DEBUG"), "a")))
 	{
-		target_chan(target, SYSCHAT_NAME_LEN, syschat->hostname);
-		return (0);
+		fprintf(debug_file, "[raw] %s\n", srv_message);
+		fclose(debug_file);
 	}
 	parsed = server_parse_message(srv_message);
-	if (strcmp(parsed[0], "PING") == 0 || strcmp(parsed[1], "PING") == 0)
+	bzero(srv_message, BF_SIZE);
+	if (is_numeric(parsed[1]))
+	{
+		target_chan(target, SYSCHAT_NAME_LEN, syschat->hostname);
+		snprintf(srv_message, BF_SIZE, "\e[0;37m%s\e[0m", numeric_body(raw));
+		displayed = 1;
+	}
+	else if (strcmp(parsed[0], "PING") == 0 || strcmp(parsed[1], "PING") == 0)
 		server_handle_ping(syschat, parsed, srv_message, target);
 	else if (strcmp(parsed[1], "JOIN") == 0)
 		server_handle_join(syschat, parsed, srv_message, target);
@@ -197,7 +244,9 @@ int server_handle_message(t_syschat *syschat, char *srv_message, char *target)
 		server_handle_mode(syschat, parsed, srv_message, target);
 	else if (strcmp(parsed[1], "NOTICE") == 0)
 		server_handle_notice(syschat, parsed, srv_message, target);
-	displayed = srv_message[0] != '\0';
+	if (srv_message[0] != '\0' && strcmp(parsed[0], "PING") != 0
+		&& strcmp(parsed[1], "PING") != 0)
+		displayed = 1;
 	for (int i = 0; i != 16; i++)
 		free(parsed[i]);
 	free(parsed);

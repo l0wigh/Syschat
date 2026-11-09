@@ -37,6 +37,9 @@ messages are marked with a `*`.
 - `/close [#channel]` : leave and close a buffer
 - `/?` : list the commands
 
+The first buffer is the server window: registration and MOTD lines, server
+notices and errors (numerics) are printed there.
+
 Messages received in a buffer you are not looking at are never dropped: they
 are stored in that buffer's history (and flagged unread) until you switch to
 it.
@@ -51,9 +54,14 @@ It was at first a pet project, but it works very good for my daily usage of irc 
 
     make
 
-or, on a machine without make:
+or, on a machine without make (the only target exercised so far):
 
     ./build.sh
+
+Tests (no unit tests, functional checks only):
+
+    python3 tests/functional_buffers.py     # offline, mock IRC server + pty
+    python3 tests/network_smoke.py          # optional, real network
 
 ## Compile flags ?
 
