@@ -330,8 +330,17 @@ void commands_handle_connect(t_syschat *syschat, char **parsed)
 	}
 	if (network_connect_server(syschat, &syschat->conns[id], 0) == -1)
 	{
+		int	strict = syschat->conns[id].tls_required;
+		char	reason[256];
+
+		snprintf(reason, sizeof(reason), "%s", syschat->conns[id].tls_reason);
 		syschat_conn_close(syschat, id);
-		snprintf(line, sizeof(line), "connect: cannot reach %s:%d", parsed[3], port);
+		if (strict)
+			snprintf(line, sizeof(line),
+				"connect: TLS is required (--tls-required) and the handshake failed: %s",
+				reason[0] ? reason : "no TLS answer");
+		else
+			snprintf(line, sizeof(line), "connect: cannot reach %s:%d", parsed[3], port);
 		commands_say(syschat, line);
 		return ;
 	}
@@ -348,8 +357,9 @@ void commands_handle_connect(t_syschat *syschat, char **parsed)
 	if (syschat->conns[id].tls && !syschat->conns[id].tls_active)
 	{
 		snprintf(line, sizeof(line),
-			"\e[0;31mTLS: handshake failed -- falling back to plaintext, "
-			"this session is NOT encrypted\e[0m");
+			"\e[0;31mTLS: handshake failed (%s) -- falling back to plaintext, "
+			"this session is NOT encrypted\e[0m",
+			syschat->conns[id].tls_reason[0] ? syschat->conns[id].tls_reason : "no answer");
 		buffers_notice(syschat, (unsigned) id, line);
 	}
 	snprintf(line, sizeof(line), "-- connected to %s as %s (%s:%d, %s)", parsed[2],

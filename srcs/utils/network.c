@@ -69,8 +69,6 @@ static int	network_connect_plain(t_syschat *syschat, t_conn *conn, int fatal)
 int	network_connect_server(t_syschat *syschat, t_conn *conn, int fatal)
 {
 	char	reason[256];
-	char	line[512];
-	int		index;
 
 	conn->fd = -1;
 	if (network_connect_plain(syschat, conn, fatal) == -1)
@@ -85,7 +83,21 @@ int	network_connect_server(t_syschat *syschat, t_conn *conn, int fatal)
 	** the handshake gains nothing.
 	*/
 	if (conn->tls_required)
-		error_tls_exit(syschat, reason);
+	{
+		/*
+		** A connection added at runtime must not take the whole client down:
+		** only the connection given on the command line may exit here.
+		*/
+		if (fatal)
+			error_tls_exit(syschat, reason);
+		snprintf(conn->tls_reason, sizeof(conn->tls_reason), "%s", reason);
+		if (conn->fd >= 0)
+		{
+			close(conn->fd);
+			conn->fd = -1;
+		}
+		return (-1);
+	}
 	/*
 	** A TLS failure must never lock the user out of IRC: fall back to the
 	** plaintext connection used before this feature, and say so in clear
@@ -96,15 +108,12 @@ int	network_connect_server(t_syschat *syschat, t_conn *conn, int fatal)
 	conn->fd = -1;
 	if (network_connect_plain(syschat, conn, fatal) == -1)
 		return (-1);
-	bzero(line, sizeof(line));
-	snprintf(line, sizeof(line),
-		"\e[0;31mTLS: handshake failed (%s) -- falling back to plaintext, "
-		"this session is NOT encrypted\e[0m", reason);
-	index = buffers_find_on(syschat, (unsigned) (conn - syschat->conns),
-		syschat_conn_name(conn));
-	if (index == -1)
-		index = syschat->active;
-	buffers_append(syschat, index, line);
+	/*
+	** Do not write the warning here: this connection may have no buffer yet,
+	** and `active` may be another server's tab. Keep the reason, the caller
+	** reports it once the window exists.
+	*/
+	snprintf(conn->tls_reason, sizeof(conn->tls_reason), "%s", reason);
 	return (0);
 }
 

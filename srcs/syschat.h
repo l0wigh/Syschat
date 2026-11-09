@@ -89,6 +89,11 @@ typedef struct s_conn
 	*/
 	char		net[SYSCHAT_NET_BUFFER];
 	int			net_len;
+	/*
+	** Why a TLS handshake failed, kept so the caller can report it once the
+	** window for this connection exists. Empty when TLS was fine.
+	*/
+	char		tls_reason[256];
 	t_syschat	*owner;
 } t_conn;
 

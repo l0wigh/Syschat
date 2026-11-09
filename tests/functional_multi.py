@@ -253,7 +253,7 @@ def main():
     # announced, and must not be labelled "TLS".
     tls_probe = socket.socket()
     tls_probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    tls_probe.bind((HOST, 6697))
+    tls_probe.bind(("127.0.0.2", 6697))
     tls_probe.listen(2)
     seen = {}
 
@@ -283,11 +283,16 @@ def main():
             tls_probe.close()
 
     threading.Thread(target=serve_tls_probe, daemon=True).start()
-    send("/connect bob three %s\n" % HOST)     # no port at all
+    send("/connect bob three 127.0.0.2\n")     # no port at all
     pump(2.5)
     checks["no port defaults to 6697 over TLS"] = seen.get("hello", b"")[:2] == b"\x16\x03"
     frame = last_frame()
     checks["a plaintext fallback is announced"] = "NOT encrypted" in frame
+    # the stray copy used to land in another server's tab: look there
+    send("/switch %s/#chan\n" % A_LABEL)
+    pump(0.5)
+    checks["the fallback notice does not leak into another server's tab"] = \
+        "falling back" not in last_frame()
     checks["a plaintext session is not labelled TLS"] = "127.0.0.1:6697, TLS" not in frame
     send("/disconnect three\n")
     pump(0.5)
@@ -391,6 +396,62 @@ def main():
     checks["last /disconnect exits 0"] = drc == 0
     checks["last /disconnect says why it exits"] = "no server left" in dtext
     os.close(d_master)
+
+    # --- --tls-required on a hot-added connection must not kill the client
+    m2, s2 = pty.openpty()
+    fcntl.ioctl(s2, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
+    strict = subprocess.Popen([BIN, "--tls-required"], stdin=s2, stdout=s2, stderr=s2,
+                              close_fds=True)
+    os.close(s2)
+    out2 = bytearray()
+
+    def pump2(seconds):
+        end = time.time() + seconds
+        while time.time() < end:
+            r, _, _ = select.select([m2], [], [], 0.05)
+            if r:
+                try:
+                    chunk = os.read(m2, 65536)
+                except OSError:
+                    return
+                if not chunk:
+                    return
+                out2.extend(chunk)
+
+    pump2(1.0)
+    # a listener that accepts and hangs up at once: the handshake fails
+    # immediately instead of waiting out the 20s TLS timeout
+    close_srv = socket.socket()
+    close_srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    close_srv.bind((HOST, 0))
+    close_srv.listen(1)
+    strict_port = close_srv.getsockname()[1]
+
+    def hang_up_once():
+        try:
+            conn, _ = close_srv.accept()
+            conn.close()
+        except OSError:
+            pass
+        finally:
+            close_srv.close()
+
+    threading.Thread(target=hang_up_once, daemon=True).start()
+    os.write(m2, ("/connect bob plain 127.0.0.1 %d\n" % strict_port).encode())
+    pump2(2.5)
+    # With no other server alive the client is allowed to end (nothing left
+    # to talk to); what must NOT happen is the fatal exit(10) of
+    # error_tls_exit(), which used to take the whole session down.
+    try:
+        strict_rc = strict.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        strict.kill()
+        strict_rc = -1
+    last2 = [f for f in out2.decode(errors="replace").split("\x1b[H") if f.strip()]
+    checks["--tls-required explains the refusal"] = \
+        bool(last2) and "TLS is required" in last2[-1]
+    checks["a refused hot /connect is not a fatal TLS exit"] = strict_rc == 0
+    pump2(0.2)
 
     print("=== SERVER A LOG ===")
     for l in STATE["A"]["log"]:

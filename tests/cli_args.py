@@ -94,7 +94,9 @@ def cli_default_port_is_tls(timeout=8):
     A bare TCP socket records what the client sends first."""
     srv = socket.socket()
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind(("127.0.0.1", 6697))
+    # 127.0.0.2: 127.0.0.1:6697 can already be held by an unrelated listener
+    # in a shared environment, and the point is the port, not the address.
+    srv.bind(("127.0.0.2", 6697))
     srv.listen(1)
     seen = {}
 
@@ -112,7 +114,7 @@ def cli_default_port_is_tls(timeout=8):
 
     threading.Thread(target=serve, daemon=True).start()
     master, slave = pty.openpty()
-    proc = subprocess.Popen([BIN, "127.0.0.1", "tester"], stdin=slave, stdout=slave,
+    proc = subprocess.Popen([BIN, "127.0.0.2", "tester"], stdin=slave, stdout=slave,
                             stderr=slave, close_fds=True)
     os.close(slave)
     time.sleep(2.0)

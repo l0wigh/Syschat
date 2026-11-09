@@ -613,6 +613,16 @@ int main(int argc, char **argv)
 		char	info[160];
 
 		network_connect_server(&syschat, &syschat.conns[0], 1);
+		if (syschat.conns[0].tls && !syschat.conns[0].tls_active)
+		{
+			char	warn[BF_SIZE];
+
+			snprintf(warn, sizeof(warn),
+				"\e[0;31mTLS: handshake failed (%s) -- falling back to plaintext, "
+				"this session is NOT encrypted\e[0m",
+				syschat.conns[0].tls_reason[0] ? syschat.conns[0].tls_reason : "no answer");
+			buffers_append(&syschat, 0, warn);
+		}
 		syschat_say_hello(&syschat.conns[0]);
 		tls_summary(&syschat.conns[0], info, sizeof(info));
 		snprintf(banner, sizeof(banner),
