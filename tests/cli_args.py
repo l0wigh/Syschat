@@ -7,7 +7,7 @@ refused instead of silently clamped.
 
 Usage: ./build.sh && python3 tests/cli_args.py [binary]
 """
-import subprocess, sys, os, pty, termios, time, select
+import subprocess, sys, os, pty, termios, time, select, socket, threading
 
 BIN = sys.argv[1] if len(sys.argv) > 1 else "./syschat"
 
@@ -87,6 +87,43 @@ def starts_without_argument(timeout=8):
 alive, rc, help_visible = starts_without_argument()
 checks["no argument -> starts disconnected, /exit returns 0"] = alive and rc == 0
 checks["no argument -> /? is visible in the last frame"] = help_visible
+
+
+def cli_default_port_is_tls(timeout=8):
+    """No port on the command line must mean 6697 + TLS, like /connect.
+    A bare TCP socket records what the client sends first."""
+    srv = socket.socket()
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", 6697))
+    srv.listen(1)
+    seen = {}
+
+    def serve():
+        try:
+            srv.settimeout(4.0)
+            conn, _ = srv.accept()
+            conn.settimeout(2.0)
+            seen["hello"] = conn.recv(8)
+            conn.close()
+        except OSError:
+            seen["hello"] = b""
+        finally:
+            srv.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    master, slave = pty.openpty()
+    proc = subprocess.Popen([BIN, "127.0.0.1", "tester"], stdin=slave, stdout=slave,
+                            stderr=slave, close_fds=True)
+    os.close(slave)
+    time.sleep(2.0)
+    proc.kill()
+    proc.wait()
+    os.close(master)
+    return seen.get("hello", b"")
+
+
+hello = cli_default_port_is_tls()
+checks["host nick (no port) -> 6697 and TLS by default"] = hello[:2] == b"\x16\x03"
 
 
 def run_pty(args, timeout=10):

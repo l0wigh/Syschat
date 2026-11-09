@@ -16,7 +16,7 @@ void error_print(int err)
 	{
 		case 1:
 			fprintf(stderr, "you need to give <hostname> <nickname> arguments.\n"
-				"usage: ./syschat <hostname> <nickname> [port] "
+				"usage: ./syschat <hostname> <nickname> [port (default 6697, TLS)] "
 				"[--tls] [--no-tls] [--insecure] [--tls-required]");
 			break;
 		case 2:

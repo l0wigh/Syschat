@@ -234,7 +234,9 @@ void syschat_load_config(char **argv, int argc)
 	}
 	else if (pos < 2)
 		error_exit(NULL, 1);
-	port = 6667;
+	/* No port means the TLS port, exactly like /connect: one default for
+	** every way in, so "syschat host nick" and "/connect n s host" agree. */
+	port = 6697;
 	if (pos > 2)
 	{
 		char	*end;
