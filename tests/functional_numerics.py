@@ -17,6 +17,12 @@ SYNC = [
 # Every numeric that makes a /join fail must reach the channel tab, otherwise
 # the user sees nothing happen. The list is checked exhaustively so a code
 # missing from the routing switch fails the suite instead of a review.
+#
+# KNOWN BLIND SPOT: this list and the switch in srcs/utils/server.c are two
+# hand-maintained lists. A code absent from BOTH (e.g. 479, illegal channel
+# name, which is not in RFC 2812) stays silent and nothing here can ask for
+# it. Adding a join error means editing both places -- until a single .def
+# drives the switch, the formats and this list.
 JOIN_ERRORS = [403, 404, 405, 470, 471, 473, 474, 475, 476, 477, 478, 485]
 JOIN_ERROR_LINES = [
     (":mock %d tester #alpha :ERRCODE%d\r\n" % (c, c)).encode() for c in JOIN_ERRORS
