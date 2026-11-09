@@ -22,7 +22,7 @@ void syschat_load_config(char **argv, int argc_port)
 	bzero(&syschat, sizeof(t_syschat));
 	syschat.hostname = strdup(argv[1]);
 	syschat.nickname = strdup(argv[2]);
-	syschat.port = argc_port > 2 ? atoi(argv[3]) : 6667;
+	syschat.port = argc_port > 3 ? atoi(argv[3]) : 6667;
 	if (syschat.port <= 0 || syschat.port > 65535)
 		syschat.port = 6667;
 	syschat.active = -1;
