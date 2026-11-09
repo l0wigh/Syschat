@@ -65,6 +65,7 @@ def serve(srv, name, ready):
 
 def session(conn, name):
     st = STATE[name]
+    st["conn"] = conn
     buf = b""
     nick = "tester"
     conn.settimeout(0.2)
@@ -232,6 +233,19 @@ def main():
     pump(0.6)
     new = STATE["A"]["log"][before:]
     checks["no PRIVMSG from a server console window"] = not any("PRIVMSG" in l for l in new)
+
+    # --- a server that drops must explain itself somewhere visible -----
+    send("/connect two %s %d\n" % (HOST, PORT_B))
+    pump(1.0)
+    # guard: on a baseline without /connect there is no socket to hang up
+    if STATE["B"].get("conn"):
+        STATE["B"]["conn"].close()      # the server hangs up, not the user
+    pump(1.2)
+    send("/server %s\n" % A_LABEL)
+    pump(0.6)
+    checks["client survives a server drop"] = proc.poll() is None
+    checks["drop notice lands in a surviving console"] = \
+        "-- two disconnected" in last_frame()
 
     # --- /exit says goodbye on every connection -----------------------
     send("/connect two %s %d\n" % (HOST, PORT_B))
