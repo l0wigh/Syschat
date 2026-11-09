@@ -7,7 +7,7 @@ drives it like a human would: /join two channels, type, Tab / Shift-Tab,
 
 Usage:  ./build.sh && python3 tests/functional_buffers.py
 """
-import os, pty, select, socket, subprocess, sys, termios, time, fcntl, struct, threading
+import os, re, pty, select, socket, subprocess, sys, termios, time, fcntl, struct, threading
 
 HOST, PORT = "127.0.0.1", 16667
 log = []
@@ -214,6 +214,7 @@ def main():
         "PONG answered split PING": state["pong"] is not None and "split" in (state["pong"] or ""),
         "local echo sent": any("PRIVMSG #alpha :hello from tab test" in l for l in log),
         "help listed": "Commands list" in plain,
+        "timestamps on every line": re.search(r"\[\d\d:\d\d\] \[#alpha\] <bob>: alpha one", plain) is not None,
     })
     for k, v in checks.items():
         print(("OK   " if v else "FAIL ") + k)

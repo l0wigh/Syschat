@@ -1,4 +1,5 @@
 #include "buffers.h"
+#include <time.h>
 
 /*
 ** Buffers are matched case-insensitively, like IRC channel names.
@@ -93,6 +94,24 @@ int buffers_route(t_syschat *syschat, const char *name)
 	return (index);
 }
 
+/*
+** Every line of every buffer goes through here, so the timestamp cannot be
+** forgotten at one call site. 8 visible columns: "[HH:MM] ".
+*/
+static const char *stamped_line(const char *line)
+{
+	static char	stamped[BF_SIZE * 2 + 32];
+	time_t		now;
+	struct tm	*tm;
+
+	now = time(NULL);
+	tm = localtime(&now);
+	if (!tm)
+		return (line);
+	snprintf(stamped, sizeof(stamped), "\e[90m[%02d:%02d]\e[0m %s", tm->tm_hour, tm->tm_min, line);
+	return (stamped);
+}
+
 void buffers_append(t_syschat *syschat, int index, const char *line)
 {
 	t_buffer	*buffer;
@@ -105,7 +124,7 @@ void buffers_append(t_syschat *syschat, int index, const char *line)
 	slot = buffer->head;
 	if (buffer->lines[slot])
 		free(buffer->lines[slot]);
-	buffer->lines[slot] = strdup(line);
+	buffer->lines[slot] = strdup(stamped_line(line));
 	if (!buffer->lines[slot])
 		return ;
 	pos = strchr(buffer->lines[slot], '\n');
