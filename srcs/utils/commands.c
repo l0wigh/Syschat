@@ -285,9 +285,10 @@ void commands_handle_switch(t_syschat *syschat, char **parsed)
 }
 
 /*
-** /connect <label> <host> [port]: the label names the connection, the same
-** TLS policy as the command line applies (port 6697 or SYSCHAT_TLS or the
-** flags), so a plaintext mock on 16681 stays plaintext.
+** /connect <nickname> <server> <host> [port]: the nickname is per
+** connection, the server name labels it, and the TLS policy is the same as
+** on the command line (port 6697, or SYSCHAT_TLS, or the flags). No port
+** means 6697, so a fresh /connect tries TLS first.
 */
 void commands_handle_connect(t_syschat *syschat, char **parsed)
 {
@@ -338,8 +339,22 @@ void commands_handle_connect(t_syschat *syschat, char **parsed)
 	buf_index = buffers_new_on(syschat, (unsigned) id, syschat->conns[id].label);
 	if (buf_index != -1)
 		buffers_switch(syschat, buf_index);
+	/*
+	** A handshake that failed falls back to plaintext, and the warning
+	** written by network_connect_server() could not land anywhere: this
+	** connection had no buffer yet, and `active` may be another server's
+	** tab. Say it here, once the window exists.
+	*/
+	if (syschat->conns[id].tls && !syschat->conns[id].tls_active)
+	{
+		snprintf(line, sizeof(line),
+			"\e[0;31mTLS: handshake failed -- falling back to plaintext, "
+			"this session is NOT encrypted\e[0m");
+		buffers_notice(syschat, (unsigned) id, line);
+	}
 	snprintf(line, sizeof(line), "-- connected to %s as %s (%s:%d, %s)", parsed[2],
-		parsed[1], parsed[3], port, syschat->conns[id].tls ? "TLS" : "plaintext");
+		parsed[1], parsed[3], port,
+		syschat->conns[id].tls_active ? "TLS" : "plaintext");
 	commands_say(syschat, line);
 }
 

@@ -247,23 +247,54 @@ def main():
     checks["no PRIVMSG from a server console window"] = not any("PRIVMSG" in l for l in new)
 
     # --- /connect without a port must mean 6697 and TLS ---------------
+    # A bare TCP socket on 6697: the first connection gets a ClientHello
+    # (so TLS is attempted), the handshake cannot complete, and the client
+    # falls back to plaintext on a second connection -- which must be
+    # announced, and must not be labelled "TLS".
     tls_probe = socket.socket()
     tls_probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     tls_probe.bind((HOST, 6697))
-    tls_probe.listen(1)
-    sent = {}
+    tls_probe.listen(2)
+    seen = {}
 
+    def serve_tls_probe():
+        try:
+            first, _ = tls_probe.accept()
+            first.settimeout(2.0)
+            seen["hello"] = first.recv(8)
+            first.close()
+            second, _ = tls_probe.accept()
+            second.settimeout(2.0)
+            buf = b""
+            while b"USER" not in buf:
+                chunk = second.recv(4096)
+                if not chunk:
+                    break
+                buf += chunk
+            nick = "bob"
+            for line in buf.split(b"\r\n"):
+                if line.startswith(b"USER"):
+                    nick = line.split(b" ")[1].decode()
+            second.sendall((":m 001 %s :Welcome\r\n" % nick).encode())
+            seen["plain"] = second      # kept open: the checks run on it
+        except OSError:
+            pass
+        finally:
+            tls_probe.close()
+
+    threading.Thread(target=serve_tls_probe, daemon=True).start()
     send("/connect bob three %s\n" % HOST)     # no port at all
-    pump(1.2)
+    pump(2.5)
+    checks["no port defaults to 6697 over TLS"] = seen.get("hello", b"")[:2] == b"\x16\x03"
+    frame = last_frame()
+    checks["a plaintext fallback is announced"] = "NOT encrypted" in frame
+    checks["a plaintext session is not labelled TLS"] = "127.0.0.1:6697, TLS" not in frame
+    send("/disconnect three\n")
+    pump(0.5)
     try:
-        tls_probe.settimeout(2.0)
-        first, _ = tls_probe.accept()
-        sent["hello"] = first.recv(8)
-        first.close()
-    except (socket.timeout, OSError):
-        sent["hello"] = b""
-    tls_probe.close()
-    checks["no port defaults to 6697 over TLS"] = sent["hello"][:2] == b"\x16\x03"
+        seen["plain"].close()
+    except Exception:
+        pass
 
     # --- a /close must not be undone by the server's PART echo --------
     send("/server %s\n" % A_LABEL)
