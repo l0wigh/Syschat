@@ -47,7 +47,7 @@ void server_handle_join(t_syschat *syschat, char **parsed, char *srv_message, ch
 		if (index != -1)
 			syschat->buffers[index].joined = 1;
 	}
-	snprintf(srv_message, BF_SIZE, "-!- \e[0;32m%s\e[0m just \e[0;32mentered\e[0m", parsed[0]);
+	snprintf(srv_message, BF_SIZE, "-!- %s%s\e[0m just entered", nick_color(parsed[0]), parsed[0]);
 }
 
 void server_handle_quit(t_syschat *syschat, char **parsed, char *srv_message, char *target)
@@ -70,7 +70,7 @@ void server_handle_part(t_syschat *syschat, char **parsed, char *srv_message, ch
 		if (index != -1)
 			syschat->buffers[index].joined = 0;
 	}
-	snprintf(srv_message, BF_SIZE, "-!- \e[0;32m%s\e[0m just \e[0;31mleft\e[0m", parsed[0]);
+	snprintf(srv_message, BF_SIZE, "-!- %s%s\e[0m just left", nick_color(parsed[0]), parsed[0]);
 }
 
 void server_handle_privmsg(t_syschat *syschat, char **parsed, char *srv_message, char *target)
@@ -80,8 +80,8 @@ void server_handle_privmsg(t_syschat *syschat, char **parsed, char *srv_message,
 	{
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
 		/* The channel name is already the tab title: no need to repeat it. */
-		snprintf(srv_message, BF_SIZE, "<\e[0;34m%s\e[0m> \e[0;34m%s\e[0m",
-			parsed[0], parsed[3]);
+		snprintf(srv_message, BF_SIZE, "<%s%s\e[0m> %s",
+			nick_color(parsed[0]), parsed[0], parsed[3]);
 	}
 	else
 	{
@@ -93,8 +93,9 @@ void server_handle_privmsg(t_syschat *syschat, char **parsed, char *srv_message,
 				parsed[0], parsed[3]);
 			return ;
 		}
-		snprintf(srv_message, BF_SIZE, "<\e[0;34m%s\e[0m> -> <\e[0;33m%s\e[0m>: \e[0;34m%s\e[0m",
-			parsed[0], syschat->nickname, parsed[3]);
+		snprintf(srv_message, BF_SIZE, "<%s%s\e[0m> -> <%s%s\e[0m> %s",
+			nick_color(parsed[0]), parsed[0], nick_color(syschat->nickname),
+			syschat->nickname, parsed[3]);
 	}
 }
 

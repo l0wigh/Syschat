@@ -189,11 +189,11 @@ void commands_handle_msg(t_syschat *syschat, char *command)
 		return ;
 	bzero(line, sizeof(line));
 	if (target[0] == '#')
-		snprintf(line, sizeof(line), "<\e[0;33m%s\e[0m> \e[0;33m%s\e[0m",
-			syschat->nickname, sent);
+		snprintf(line, sizeof(line), "<%s%s\e[0m> %s",
+			nick_color(syschat->nickname), syschat->nickname, sent);
 	else
-		snprintf(line, sizeof(line), "\e[0;33m%s\e[0m -> \e[0;34m%s\e[0m \e[0;33m%s\e[0m",
-			syschat->nickname, target, sent);
+		snprintf(line, sizeof(line), "<%s%s\e[0m> -> <%s%s\e[0m> %s",
+			nick_color(syschat->nickname), syschat->nickname, nick_color(target), target, sent);
 	index = buffers_route(syschat, target);
 	buffers_append(syschat, index, line);
 	if (truncated)

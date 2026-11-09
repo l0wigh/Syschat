@@ -4,6 +4,41 @@
 /*
 ** Buffers are matched case-insensitively, like IRC channel names.
 */
+/*
+** Five period-accurate accents, no blue: the body text stays default so a
+** channel full of blue is impossible by construction.
+*/
+static const char *NICK_COLORS[] = {
+	"\e[0;33m",	/* yellow */
+	"\e[0;32m",	/* green */
+	"\e[0;35m",	/* magenta */
+	"\e[0;36m",	/* cyan */
+	"\e[1;31m",	/* light red */
+	"\e[1;32m",	/* light green */
+	"\e[1;35m"	/* light magenta */
+};
+#define NICK_COLOR_COUNT 7
+
+const char *nick_color(const char *nick)
+{
+	unsigned int	hash;
+	const char		*p;
+
+	if (!nick || !nick[0])
+		return (NICK_COLORS[0]);
+	p = nick;
+	/* Status prefix is not part of the identity: @bob and bob are the same. */
+	while (*p && strchr("@+%~&", *p))
+		p++;
+	hash = 0;
+	while (*p)
+	{
+		hash = hash * 31 + (unsigned char) *p;
+		p++;
+	}
+	return (NICK_COLORS[hash % NICK_COLOR_COUNT]);
+}
+
 int buffers_find(t_syschat *syschat, const char *name)
 {
 	if (!syschat || !name)

@@ -83,11 +83,11 @@ static void syschat_send_line(char *input)
 		return ;
 	bzero(line, sizeof(line));
 	if (name[0] == '#')
-		snprintf(line, sizeof(line), "<\e[0;33m%s\e[0m> \e[0;33m%s\e[0m",
-			syschat.nickname, sent);
+		snprintf(line, sizeof(line), "<%s%s\e[0m> %s",
+			nick_color(syschat.nickname), syschat.nickname, sent);
 	else
-		snprintf(line, sizeof(line), "\e[0;33m%s\e[0m -> \e[0;34m%s\e[0m \e[0;33m%s\e[0m",
-			syschat.nickname, name, sent);
+		snprintf(line, sizeof(line), "<%s%s\e[0m> -> <%s%s\e[0m> %s",
+			nick_color(syschat.nickname), syschat.nickname, nick_color(name), name, sent);
 	buffers_append(&syschat, syschat.active, line);
 	if (truncated)
 	{

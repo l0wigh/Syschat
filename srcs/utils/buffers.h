@@ -3,6 +3,7 @@
 
 #include "../syschat.h"
 
+const char *nick_color(const char *nick);
 int		buffers_find(t_syschat *syschat, const char *name);
 int		buffers_new(t_syschat *syschat, const char *name);
 int		buffers_join(t_syschat *syschat, const char *name);
