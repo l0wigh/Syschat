@@ -96,11 +96,6 @@ void error_cleaning(t_syschat *syschat)
 			free(syschat->status[i]);
 		syschat->status[i] = NULL;
 	}
-	if (syschat->default_nick)
-	{
-		free(syschat->default_nick);
-		syschat->default_nick = NULL;
-	}
 	buffers_free(syschat);
 }
 

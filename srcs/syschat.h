@@ -128,7 +128,6 @@ typedef struct s_syschat
 	t_conn				conns[SYSCHAT_MAX_SERVERS];
 	int					conn_count;		/* slots never move: high water mark */
 	int					current;		/* server of the active buffer */
-	char				*default_nick;	/* used by /connect when no server exists yet */
 	/*
 	** Before the first connection there is no buffer to write into. What a
 	** command says then (usage errors, "?" help) goes into this ring, and

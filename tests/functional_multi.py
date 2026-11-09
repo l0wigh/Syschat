@@ -164,9 +164,11 @@ def main():
     pump(0.6)
 
     # --- second server ------------------------------------------------
-    send("/connect two %s %d\n" % (HOST, PORT_B))
+    send("/connect bob two %s %d\n" % (HOST, PORT_B))
     pump(1.0)
     checks["second server connected"] = any(l.startswith("USER") for l in STATE["B"]["log"])
+    checks["the nickname given to /connect is the one used"] = \
+        any(l.startswith("NICK bob") for l in STATE["B"]["log"])
 
     # /connect moved the focus to the new server's own window
     send("/join #chan\n")
@@ -244,6 +246,25 @@ def main():
     new = STATE["A"]["log"][before:]
     checks["no PRIVMSG from a server console window"] = not any("PRIVMSG" in l for l in new)
 
+    # --- /connect without a port must mean 6697 and TLS ---------------
+    tls_probe = socket.socket()
+    tls_probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    tls_probe.bind((HOST, 6697))
+    tls_probe.listen(1)
+    sent = {}
+
+    send("/connect bob three %s\n" % HOST)     # no port at all
+    pump(1.2)
+    try:
+        tls_probe.settimeout(2.0)
+        first, _ = tls_probe.accept()
+        sent["hello"] = first.recv(8)
+        first.close()
+    except (socket.timeout, OSError):
+        sent["hello"] = b""
+    tls_probe.close()
+    checks["no port defaults to 6697 over TLS"] = sent["hello"][:2] == b"\x16\x03"
+
     # --- a /close must not be undone by the server's PART echo --------
     send("/server %s\n" % A_LABEL)
     pump(0.3)
@@ -270,7 +291,7 @@ def main():
     checks["the echo is reported in the server window"] = "you left #gone" in last_frame()
 
     # --- a server that drops must explain itself somewhere visible -----
-    send("/connect two %s %d\n" % (HOST, PORT_B))
+    send("/connect bob two %s %d\n" % (HOST, PORT_B))
     pump(1.0)
     # guard: on a baseline without /connect there is no socket to hang up
     if STATE["B"].get("conn"):
@@ -283,7 +304,7 @@ def main():
         "-- two disconnected" in last_frame()
 
     # --- /exit says goodbye on every connection -----------------------
-    send("/connect two %s %d\n" % (HOST, PORT_B))
+    send("/connect bob two %s %d\n" % (HOST, PORT_B))
     pump(1.0)
     send("/exit\n")
     try:

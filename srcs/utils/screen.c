@@ -483,7 +483,7 @@ void	screen_draw(t_syschat *syschat, const char *input)
 		int	line;
 
 		used += snprintf(out + used, size - used,
-			"\033[0;37mNo server yet. /connect <name> <host> [port] to open one, "
+			"\033[0;37mNo server yet. /connect <nick> <server> <host> [port] to open one, "
 			"/? for help.\033[0m\033[K\r\n");
 		line = 1;
 		/* The ring is right aligned: the oldest entry sits at

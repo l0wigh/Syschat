@@ -255,13 +255,10 @@ void syschat_load_config(char **argv, int argc)
 		error_exit(NULL, 11);
 	if (pos == 0)
 	{
-		char	*user;
-
-		user = getenv("USER");
+		/* No server and no nickname: /connect asks for both. */
 		syschat.conn_count = 0;
 		syschat.current = 0;
 		syschat.active = -1;
-		syschat.default_nick = strdup(user && user[0] ? user : "syschat");
 		return ;
 	}
 	syschat.conn_count = 1;
@@ -273,7 +270,6 @@ void syschat_load_config(char **argv, int argc)
 	conn->hostname = strdup(positional[0]);
 	conn->nickname = strdup(positional[1]);
 	conn->port = port;
-	syschat.default_nick = strdup(positional[1]);
 	syschat_apply_tls_policy(conn);
 	syschat.current = 0;
 	syschat.active = -1;

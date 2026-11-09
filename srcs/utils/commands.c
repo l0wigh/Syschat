@@ -298,30 +298,30 @@ void commands_handle_connect(t_syschat *syschat, char **parsed)
 	int		id;
 	int		buf_index;
 
-	if (parsed[1][0] == '\0' || parsed[2][0] == '\0')
+	if (parsed[1][0] == '\0' || parsed[2][0] == '\0' || parsed[3][0] == '\0')
 	{
-		commands_say(syschat, "usage: /connect <label> <host> [port]");
+		commands_say(syschat, "usage: /connect <nickname> <server> <host> [port]");
 		return ;
 	}
-	if (find_server(syschat, parsed[1]) >= 0)
+	if (find_server(syschat, parsed[2]) >= 0)
 	{
-		commands_say(syschat, "connect: this server label is already used");
+		commands_say(syschat, "connect: this server name is already used");
 		return ;
 	}
-	port = 6667;
-	if (parsed[3][0])
+	/* No port means the TLS port: /connect asks for encryption by default. */
+	port = 6697;
+	if (parsed[4][0])
 	{
 		end = NULL;
-		value = strtol(parsed[3], &end, 10);
-		if (end == parsed[3] || *end != '\0' || value < 1 || value > 65535)
+		value = strtol(parsed[4], &end, 10);
+		if (end == parsed[4] || *end != '\0' || value < 1 || value > 65535)
 		{
 			commands_say(syschat, "connect: port must be an integer between 1 and 65535");
 			return ;
 		}
 		port = (int) value;
 	}
-	id = syschat_conn_add(syschat, parsed[1], parsed[2],
-		syschat->default_nick ? syschat->default_nick : "syschat", port);
+	id = syschat_conn_add(syschat, parsed[2], parsed[3], parsed[1], port);
 	if (id < 0)
 	{
 		commands_say(syschat, "connect: no free server slot");
@@ -330,7 +330,7 @@ void commands_handle_connect(t_syschat *syschat, char **parsed)
 	if (network_connect_server(syschat, &syschat->conns[id], 0) == -1)
 	{
 		syschat_conn_close(syschat, id);
-		snprintf(line, sizeof(line), "connect: cannot reach %s:%d", parsed[2], port);
+		snprintf(line, sizeof(line), "connect: cannot reach %s:%d", parsed[3], port);
 		commands_say(syschat, line);
 		return ;
 	}
@@ -338,8 +338,8 @@ void commands_handle_connect(t_syschat *syschat, char **parsed)
 	buf_index = buffers_new_on(syschat, (unsigned) id, syschat->conns[id].label);
 	if (buf_index != -1)
 		buffers_switch(syschat, buf_index);
-	snprintf(line, sizeof(line), "-- connected to %s (%s:%d, %s)", parsed[1], parsed[2],
-		port, syschat->conns[id].tls ? "TLS" : "plaintext");
+	snprintf(line, sizeof(line), "-- connected to %s as %s (%s:%d, %s)", parsed[2],
+		parsed[1], parsed[3], port, syschat->conns[id].tls ? "TLS" : "plaintext");
 	commands_say(syschat, line);
 }
 
@@ -559,7 +559,7 @@ void commands_handle_cmd_list(t_syschat *syschat)
 		"Commands list",
 		"-------------",
 		"exit                             -> Well... exit syschat",
-		"connect <label> <host> [port]    -> open another server",
+		"connect <nick> <server> <host> [port] -> open another server (port 6697 = TLS)",
 		"disconnect [label]               -> close a server connection",
 		"server [label]                   -> list servers, or show one server window",
 		"join #<channel>                  -> join the given channel",
