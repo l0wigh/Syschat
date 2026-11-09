@@ -395,6 +395,16 @@ void	screen_draw(t_syschat *syschat, const char *input)
 		for (int i = nrows; i < room; i++)
 			used += snprintf(out + used, size - used, "\033[K\r\n");
 	}
+	else if (syschat->buffer_count == 0)
+	{
+		/* Started with no argument: say what to do instead of a blank
+		** screen with a bare prompt. */
+		used += snprintf(out + used, size - used,
+			"\033[0;37mNo server yet. /connect <name> <host> [port] to open one, "
+			"/? for help.\033[0m\033[K\r\n");
+		for (int i = 1; i != room; i++)
+			used += snprintf(out + used, size - used, "\033[K\r\n");
+	}
 	else
 		for (int i = 0; i != room; i++)
 			used += snprintf(out + used, size - used, "\033[K\r\n");

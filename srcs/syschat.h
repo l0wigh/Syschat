@@ -126,6 +126,7 @@ typedef struct s_syschat
 	t_conn				conns[SYSCHAT_MAX_SERVERS];
 	int					conn_count;		/* slots never move: high water mark */
 	int					current;		/* server of the active buffer */
+	char				*default_nick;	/* used by /connect when no server exists yet */
 	t_buffer			buffers[SYSCHAT_MAX_BUFFERS];
 	int					buffer_count;
 	int					active;

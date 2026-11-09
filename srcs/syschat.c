@@ -208,7 +208,16 @@ void syschat_load_config(char **argv, int argc)
 		else if (pos < 3)
 			positional[pos++] = argv[i];
 	}
-	if (pos < 2)
+	/*
+	** No argument at all: start disconnected. /connect exists now, so the
+	** client no longer has to die on the command that the usage string
+	** used to demand. "host without nickname" stays an error.
+	*/
+	if (pos == 0)
+	{
+		pos = 0;
+	}
+	else if (pos < 2)
 		error_exit(NULL, 1);
 	port = 6667;
 	if (pos > 2)
@@ -229,6 +238,17 @@ void syschat_load_config(char **argv, int argc)
 		policy_strict = 1;
 	if (policy_strict && policy_no_tls)
 		error_exit(NULL, 11);
+	if (pos == 0)
+	{
+		char	*user;
+
+		user = getenv("USER");
+		syschat.conn_count = 0;
+		syschat.current = 0;
+		syschat.active = -1;
+		syschat.default_nick = strdup(user && user[0] ? user : "syschat");
+		return ;
+	}
 	syschat.conn_count = 1;
 	conn = &syschat.conns[0];
 	conn->fd = -1;
@@ -238,6 +258,7 @@ void syschat_load_config(char **argv, int argc)
 	conn->hostname = strdup(positional[0]);
 	conn->nickname = strdup(positional[1]);
 	conn->port = port;
+	syschat.default_nick = strdup(positional[1]);
 	syschat_apply_tls_policy(conn);
 	syschat.current = 0;
 	syschat.active = -1;
@@ -549,21 +570,20 @@ int main(int argc, char **argv)
 {
 	segfault_catcher_set(0);
 
-	if (argc < 3)
-		error_exit(NULL, 1);
-
+	/* syschat_load_config() decides: no argument starts disconnected,
+	** "host without nickname" is still a usage error. */
 	syschat_load_config(argv, argc);
 	screen_setup(&syschat);
 
 	syschat_terminal_raw();
 
-	network_connect_server(&syschat, &syschat.conns[0], 1);
-	syschat_say_hello(&syschat.conns[0]);
-
+	if (syschat.conn_count > 0)
 	{
 		char	banner[256];
 		char	info[160];
 
+		network_connect_server(&syschat, &syschat.conns[0], 1);
+		syschat_say_hello(&syschat.conns[0]);
 		tls_summary(&syschat.conns[0], info, sizeof(info));
 		snprintf(banner, sizeof(banner),
 			"Connected (%s). /join #channel to start, Tab / Shift-Tab to switch, /? for help.",

@@ -7,7 +7,7 @@ refused instead of silently clamped.
 
 Usage: ./build.sh && python3 tests/cli_args.py [binary]
 """
-import subprocess, sys, os, pty, termios
+import subprocess, sys, os, pty, termios, time
 
 BIN = sys.argv[1] if len(sys.argv) > 1 else "./syschat"
 
@@ -21,8 +21,6 @@ def run(args, timeout=6):
 
 checks = {}
 
-code, out = run([])
-checks["no argument -> usage, exit 1"] = code == 1 and "hostname" in out
 
 code, out = run(["example.invalid"])
 checks["host only -> usage, exit 1"] = code == 1 and "hostname" in out
@@ -46,6 +44,28 @@ checks["host nick (no port) -> parses, then fails on DNS (4)"] = code == 4
 # contradiction the client must refuse instead of silently picking a winner.
 code, out = run(["--no-tls", "--tls-required", "127.0.0.1", "tester"])
 checks["--no-tls + --tls-required -> refused, exit 11"] = code == 11 and "contradict" in out
+
+
+def starts_without_argument(timeout=8):
+    """No argument must start the client (it can /connect now), not print a
+    usage error: the old check asserted the opposite behaviour."""
+    master, slave = pty.openpty()
+    proc = subprocess.Popen([BIN], stdin=slave, stdout=slave, stderr=slave, close_fds=True)
+    os.close(slave)
+    time.sleep(0.8)
+    alive = proc.poll() is None
+    os.write(master, b"/exit\n")
+    try:
+        rc = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        rc = -1
+    os.close(master)
+    return alive, rc
+
+
+alive, rc = starts_without_argument()
+checks["no argument -> starts disconnected, /exit returns 0"] = alive and rc == 0
 
 
 def run_pty(args, timeout=10):

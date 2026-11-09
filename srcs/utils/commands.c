@@ -144,11 +144,21 @@ static void	commands_say(t_syschat *syschat, const char *text)
 {
 	int	index;
 
+	/*
+	** Started with no argument: there is no buffer yet, so a command that
+	** has something to say (a failed /connect, a bad label) writes on the
+	** terminal directly instead of vanishing.
+	*/
+	if (syschat->buffer_count == 0)
+	{
+		write(STDOUT_FILENO, "\r\n", 2);
+		write(STDOUT_FILENO, text, strlen(text));
+		write(STDOUT_FILENO, "\r\n", 2);
+		return ;
+	}
 	index = syschat->active;
 	if (index < 0 || index >= syschat->buffer_count)
 		index = 0;
-	if (syschat->buffer_count == 0)
-		return ;
 	buffers_append(syschat, index, text);
 }
 
@@ -311,7 +321,7 @@ void commands_handle_connect(t_syschat *syschat, char **parsed)
 		port = (int) value;
 	}
 	id = syschat_conn_add(syschat, parsed[1], parsed[2],
-		SYSC(syschat)->nickname ? SYSC(syschat)->nickname : "syschat", port);
+		syschat->default_nick ? syschat->default_nick : "syschat", port);
 	if (id < 0)
 	{
 		commands_say(syschat, "connect: no free server slot");
