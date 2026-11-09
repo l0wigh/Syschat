@@ -10,6 +10,8 @@ FILES = syschat \
 		utils/error \
 		utils/commands \
 		utils/server \
+		utils/buffers \
+		utils/screen \
 		utils/ctcp \
 		segfault_catcher/segfault_catcher \
 
@@ -19,8 +21,8 @@ OBJS_DIR	= objs/
 PROJECT_H	= srcs/
 OBJS		= $(SRCS:.c=.o)
 OBJECTS_PREFIXED = $(addprefix $(OBJS_DIR), $(OBJS))
-CC			= gcc
-CC_FLAGS	= -Wall -Werror -Wextra -Wno-unused-result -Wno-unused-variable -O2
+CC			?= gcc
+CC_FLAGS	= -std=c11 -Wall -Werror -Wextra -Wno-unused-result -Wno-unused-variable -O2
 # CC_FLAGS	= -Wall -Werror -Wextra -Wno-unused-result -Wno-unused-variable -g3
 # CC_FLAGS	= -Wall -Werror -Wextra -g3
 LIBS		=

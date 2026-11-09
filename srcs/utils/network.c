@@ -16,7 +16,7 @@ void network_connect_server(t_syschat *syschat)
 	if (family == AF_INET)
 	{
 		syschat->v4_socket.sin_family = AF_INET;
-		syschat->v4_socket.sin_port = htons(6667);
+		syschat->v4_socket.sin_port = htons(syschat->port);
 		if (inet_pton(family, ip, &syschat->v4_socket.sin_addr) <= 0)
 			error_exit(syschat, 6);
 		if (connect(syschat->net_socket, (struct sockaddr *) &syschat->v4_socket, sizeof(syschat->v4_socket)))
@@ -25,15 +25,12 @@ void network_connect_server(t_syschat *syschat)
 	else
 	{
 		syschat->v6_socket.sin6_family = AF_INET6;
-		syschat->v6_socket.sin6_port = htons(6667);
+		syschat->v6_socket.sin6_port = htons(syschat->port);
 		if (inet_pton(family, ip, &syschat->v6_socket.sin6_addr) <= 0)
 			error_exit(syschat, 6);
 		if (connect(syschat->net_socket, (struct sockaddr *) &syschat->v6_socket, sizeof(syschat->v6_socket)))
 			error_exit(syschat, 7);
 	}
-
-	network_prepare_epoll(syschat);
-	printf("Connected to %s as %s\n", syschat->hostname, syschat->nickname);
 }
 
 int network_get_ip(t_syschat *syschat, char *ip)
@@ -56,17 +53,7 @@ int network_get_ip(t_syschat *syschat, char *ip)
 
 	family = p->ai_family;
 	inet_ntop(p->ai_family, addr, ip, INET6_ADDRSTRLEN);
+	freeaddrinfo(res);
 
-	return 0;
-}
-
-void network_prepare_epoll(t_syschat *syschat)
-{
-	syschat->epoll_fd = epoll_create1(0);
-	syschat->epoll_event.events = EPOLLIN;
-	syschat->epoll_event.data.fd = syschat->net_socket;
-	epoll_ctl(syschat->epoll_fd, EPOLL_CTL_ADD, syschat->net_socket, &syschat->epoll_event);
-
-	syschat->epoll_event.data.fd = STDIN_FILENO;
-	epoll_ctl(syschat->epoll_fd, EPOLL_CTL_ADD, STDIN_FILENO, &syschat->epoll_event);
+	return (0);
 }

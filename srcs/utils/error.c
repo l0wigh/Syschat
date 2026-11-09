@@ -1,4 +1,5 @@
 #include "error.h"
+#include "buffers.h"
 
 void error_exit(t_syschat *syschat, int err)
 {
@@ -53,6 +54,5 @@ void error_cleaning(t_syschat *syschat)
 		free(syschat->hostname);
 	if (syschat->nickname)
 		free(syschat->nickname);
-	if (syschat->channel)
-		free(syschat->channel);
+	buffers_free(syschat);
 }

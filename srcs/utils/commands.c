@@ -1,15 +1,20 @@
 #include "commands.h"
+#include "buffers.h"
 
 void commands_handle_exit(t_syschat *syschat)
 {
-	char message[BF_SIZE];
+	char	*name;
+	char	message[BF_SIZE];
 
+	name = buffers_active_name(syschat);
+	if (name)
+	{
+		bzero(message, BF_SIZE);
+		snprintf(message, BF_SIZE, "PART %s\r\n", name);
+		send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+	}
 	bzero(message, BF_SIZE);
-	sprintf(message, "PART %s\r\n", syschat->channel);
-	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
-
-	bzero(message, BF_SIZE);
-	sprintf(message, "QUIT %s :%s\r\n", syschat->channel, SYSCHAT_QUIT);
+	snprintf(message, BF_SIZE, "QUIT :%s\r\n", SYSCHAT_QUIT);
 	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
 
 	error_cleaning(syschat);
@@ -18,108 +23,152 @@ void commands_handle_exit(t_syschat *syschat)
 
 void commands_handle_join(t_syschat *syschat, char **parsed)
 {
-	char message[BF_SIZE];
+	char	message[BF_SIZE];
+	char	name[SYSCHAT_NAME_LEN];
+	int		index;
 
-	bzero(message, BF_SIZE);
-
+	if (parsed[1][0] == '\0')
+		return ;
+	bzero(name, SYSCHAT_NAME_LEN);
 	if (parsed[1][0] != '#')
+		snprintf(name, SYSCHAT_NAME_LEN, "#%s", parsed[1]);
+	else
+		snprintf(name, SYSCHAT_NAME_LEN, "%s", parsed[1]);
+	if (buffers_find(syschat, name) != -1)
 	{
-		char *tmp = (char *) calloc(BF_SIZE, sizeof(char));
-
-		tmp[0] = '#';
-		strcat(tmp, parsed[1]);
-		free(parsed[1]);
-		parsed[1] = strdup(tmp);
-		free(tmp);
+		index = buffers_find(syschat, name);
+		buffers_switch(syschat, index);
+		return ;
 	}
-
 	bzero(message, BF_SIZE);
-	sprintf(message, "JOIN %s\r\n", parsed[1]);
+	snprintf(message, BF_SIZE, "JOIN %s\r\n", name);
 	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+	index = buffers_join(syschat, name);
+	if (index != -1)
+		buffers_switch(syschat, index);
+}
 
-	if (syschat->channel)
-		free(syschat->channel);
-	syschat->channel = strdup(parsed[1]);
+void commands_handle_part(t_syschat *syschat, char **parsed)
+{
+	char	*name;
+	char	message[BF_SIZE];
+
+	name = parsed[1][0] ? parsed[1] : buffers_active_name(syschat);
+	if (!name)
+		return ;
+	if (name[0] != '#' && parsed[1][0] == '\0')
+		return ;
+	bzero(message, BF_SIZE);
+	snprintf(message, BF_SIZE, "PART %s\r\n", name);
+	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+	buffers_leave(syschat, name);
+}
+
+void commands_handle_switch(t_syschat *syschat, char **parsed)
+{
+	int	index;
+
+	if (parsed[1][0] == '\0')
+		return ;
+	index = buffers_find(syschat, parsed[1]);
+	if (index == -1 && parsed[1][0] != '#')
+	{
+		char	name[SYSCHAT_NAME_LEN];
+
+		snprintf(name, SYSCHAT_NAME_LEN, "#%s", parsed[1]);
+		index = buffers_find(syschat, name);
+	}
+	if (index != -1)
+		buffers_switch(syschat, index);
+}
+
+void commands_handle_cycle(t_syschat *syschat, char **parsed)
+{
+	int	step;
+	int	count;
+
+	step = parsed[0][0] == 'p' ? -1 : 1;
+	count = 1;
+	if (parsed[1][0] >= '0' && parsed[1][0] <= '9')
+		count = atoi(parsed[1]);
+	while (count-- > 0)
+		buffers_cycle(syschat, step);
 }
 
 void commands_handle_privmsg(t_syschat *syschat, char **parsed)
 {
-	char message[BF_SIZE];
+	char	message[BF_SIZE];
 
 	bzero(message, BF_SIZE);
-	sprintf(message, "PRIVMSG %s :%s\r\n", parsed[1], parsed[2]);
+	snprintf(message, BF_SIZE, "PRIVMSG %s :%s\r\n", parsed[1], parsed[2]);
 	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
 }
 
 void commands_handle_nick(t_syschat *syschat, char **parsed)
 {
-	char message[BF_SIZE];
+	char	message[BF_SIZE];
 
+	if (parsed[1][0] == '\0')
+		return ;
 	bzero(message, BF_SIZE);
-	sprintf(message, "NICK %s\r\n", parsed[1]);
+	snprintf(message, BF_SIZE, "NICK %s\r\n", parsed[1]);
 	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
-
 	free(syschat->nickname);
 	syschat->nickname = strdup(parsed[1]);
 }
 
-void commands_handle_clear()
+void commands_handle_clear(t_syschat *syschat)
 {
-	for (int i = 0; i != 1000; i++)
-		if (write(1, "\n", 1) == -1)
-			break;
+	buffers_clear(syschat, syschat->active);
 }
 
 void commands_handle_msg(t_syschat *syschat, char *command)
 {
+	char	*space;
+
+	space = strchr(command, ' ');
+	if (!space)
+		return ;
 	while (command[0] != ' ')
 		command++;
 	*strchr(command, '\n') = '\0';
+	if (strlen(command) + 2 >= BF_SIZE)
+		return ;
 	strcat(command, "\r\n");
 	send(syschat->net_socket, command, strlen(command), MSG_DONTWAIT);
 }
 
-void commands_handle_lock(t_syschat *syschat, char **parsed)
+void commands_handle_cmd_list(t_syschat *syschat)
 {
-	if (syschat->channel)
-		free(syschat->channel);
-	syschat->channel = strdup(parsed[1]);
-}
+	static const char *help[] = {
+		"Commands list",
+		"-------------",
+		"exit                             -> Well... exit syschat",
+		"join #<channel>                  -> join the given channel",
+		"part [#<channel>]                -> leave a channel",
+		"close [#<channel>]               -> same as part",
+		"next [n] / prev [n]              -> go to next / previous buffer",
+		"switch #<channel>                -> show the given buffer",
+		"privmsg <username>               -> send a message to a user",
+		"nick <new nickname>              -> change your current nickname",
+		"clear                            -> clear the current buffer",
+		"msg <target> <message>           -> send a message to a channel or a user",
+		"lock <name>                      -> same as switch (kept for compat)",
+		"?                                -> this list",
+		"Tab / Shift-Tab                  -> next / previous buffer",
+		NULL
+	};
 
-void commands_handle_part(t_syschat *syschat, char **parsed)
-{
-	char message[BF_SIZE];
-
-	bzero(message, BF_SIZE);
-	if (strcmp(syschat->channel, parsed[1]) == 0)
-	{
-		free(syschat->channel);
-		syschat->channel = NULL;
-	}
-	sprintf(message, "PART %s\r\n", parsed[1]);
-	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
-}
-
-void commands_handle_cmd_list(void)
-{
-	write(1, "Commands list\n", 15);
-	write(1, "-------------\n", 15);
-	write(1, "exit                             -> Well... exit syschat\n", 58);
-	write(1, "join #<channel>                  -> join the given channel\n", 60);
-	write(1, "privmsg <username>               -> send a message to a user\n", 62);
-	write(1, "nick <new nickname>              -> change your current nickname\n", 66);
-	write(1, "clear                            -> clear the screen\n", 53);
-	write(1, "msg #<chan>/<username> <message> -> send a message to a channel or to a user\n", 78);
-	write(1, "lock #<channel>/<username>       -> lock yourself on a channel or private message\n", 83);
-	write(1, "part #<channel>                  -> leave a channel\n", 53);
+	for (int i = 0; help[i]; i++)
+		buffers_append(syschat, syschat->active, help[i]);
 }
 
 void commands_handle_ctcp(t_syschat *syschat, char **parsed)
 {
-	char message[BF_SIZE];
+	char	message[BF_SIZE];
 
 	bzero(message, BF_SIZE);
-	sprintf(message, "PRIVMSG %s :%c%s%c\r\n", parsed[1], 1, parsed[2], 1);
+	snprintf(message, BF_SIZE, "PRIVMSG %s :%c%s%c\r\n", parsed[1], 1, parsed[2], 1);
 	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
 }
 
@@ -128,7 +177,7 @@ void commands_execute(t_syschat *syschat, char *command)
 	char **parsed;
 
 	parsed = commands_parse(command);
-	if (strcmp(parsed[0], "exit") == 0)
+	if (strcmp(parsed[0], "exit") == 0 || strcmp(parsed[0], "quit") == 0)
 		commands_handle_exit(syschat);
 	else if (strcmp(parsed[0], "join") == 0)
 		commands_handle_join(syschat, parsed);
@@ -137,15 +186,19 @@ void commands_execute(t_syschat *syschat, char *command)
 	else if (strcmp(parsed[0], "nick") == 0)
 		commands_handle_nick(syschat, parsed);
 	else if (strcmp(parsed[0], "clear") == 0)
-		commands_handle_clear();
+		commands_handle_clear(syschat);
 	else if (strcmp(parsed[0], "msg") == 0)
 		commands_handle_msg(syschat, command);
-	else if (strcmp(parsed[0], "lock") == 0)
-		commands_handle_lock(syschat, parsed);
-	else if (strcmp(parsed[0], "part") == 0)
+	else if (strcmp(parsed[0], "lock") == 0 || strcmp(parsed[0], "switch") == 0
+		|| strcmp(parsed[0], "buffer") == 0)
+		commands_handle_switch(syschat, parsed);
+	else if (strcmp(parsed[0], "next") == 0 || strcmp(parsed[0], "prev") == 0)
+		commands_handle_cycle(syschat, parsed);
+	else if (strcmp(parsed[0], "part") == 0 || strcmp(parsed[0], "leave") == 0
+		|| strcmp(parsed[0], "close") == 0)
 		commands_handle_part(syschat, parsed);
 	else if (strcmp(parsed[0], "?") == 0)
-		commands_handle_cmd_list();
+		commands_handle_cmd_list(syschat);
 	else if (strcmp(parsed[0], "ctcp") == 0)
 		commands_handle_ctcp(syschat, parsed);
 
@@ -166,9 +219,9 @@ char **commands_parse(char *command)
 	for (int i = 0; i != 16; i++)
 		res[i] = (char *) calloc(BF_SIZE, sizeof(char));
 
-	while (command[counter] != '\n')
+	while (command[counter] != '\n' && command[counter] != '\0')
 	{
-		if (elem > 15 || ch > 512)
+		if (elem > 15 || ch > 511)
 			break;
 		if (command[counter] == ' ' && still_skip)
 		{
@@ -180,7 +233,7 @@ char **commands_parse(char *command)
 			still_skip = 0;
 			ch = -1;
 		}
-		else
+		else if (ch >= 0 && ch < BF_SIZE - 1)
 			res[elem][ch] = command[counter];
 		counter++;
 		ch++;

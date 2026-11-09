@@ -6,6 +6,5 @@
 
 void network_connect_server(t_syschat *syschat);
 int network_get_ip(t_syschat *syschat, char *ip);
-void network_prepare_epoll(t_syschat *syschat);
 
 #endif
