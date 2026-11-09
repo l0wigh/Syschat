@@ -19,9 +19,12 @@ int	screen_height(void)
 {
 	struct winsize	ws;
 
-	if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_row > 3)
-		return (ws.ws_row);
-	return (24);
+	/* Down to 2 rows the layout still holds (tab bar + prompt); below that
+	** there is nothing to lay out, and claiming 24 would make the client
+	** scroll its own screen on every redraw. */
+	if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != 0 || ws.ws_row == 0)
+		return (24);
+	return (ws.ws_row < 2 ? 2 : ws.ws_row);
 }
 
 /*
@@ -177,6 +180,8 @@ void	screen_draw(t_syschat *syschat, const char *input)
 	used += tab_bar(syschat, out + used, size - used, cols);
 	used += snprintf(out + used, size - used, "\033[K\r\n");
 	room = rows - 2;
+	if (room < 0)
+		room = 0;
 	index = syschat->active;
 	if (index >= 0 && index < syschat->buffer_count)
 	{
