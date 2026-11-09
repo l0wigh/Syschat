@@ -1,4 +1,5 @@
 #include "ctcp.h"
+#include "network.h"
 
 char *ctcp_get_distro()
 {
@@ -40,18 +41,18 @@ void ctcp_handle_request(t_syschat *syschat, char **parsed)
 		snprintf(message, sizeof(message), "NOTICE %.*s :%cVERSION %s [%s]%c\r\n",
 			CTCP_NICK_MAX, parsed[0], 1, SYSCHAT_QUIT, os_ver, 1);
 #endif
-		send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+		net_send(syschat, message, strlen(message));
 	}
 	else if (parsed[3][1] == 'U' && parsed[3][2] == 'S' && parsed[3][3] == 'E')
 	{
 		snprintf(message, sizeof(message), "NOTICE %.*s :%cUSERINFO %s%c\r\n",
 			CTCP_NICK_MAX, parsed[0], 1, SYSCHAT_USERINFO, 1);
-		send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+		net_send(syschat, message, strlen(message));
 	}
 	else if (parsed[3][1] == 'C' && parsed[3][2] == 'L' && parsed[3][3] == 'I')
 	{
 		snprintf(message, sizeof(message), "NOTICE %.*s :%cCLIENTINFO VERSION USERINFO%c\r\n",
 			CTCP_NICK_MAX, parsed[0], 1, 1);
-		send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+		net_send(syschat, message, strlen(message));
 	}
 }

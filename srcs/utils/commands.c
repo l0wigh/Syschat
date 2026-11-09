@@ -1,4 +1,5 @@
 #include "commands.h"
+#include "network.h"
 #include "buffers.h"
 #include "screen.h"
 #include <time.h>
@@ -34,7 +35,7 @@ const char *send_privmsg(t_syschat *syschat, const char *target, const char *tex
 	memcpy(payload, text, len);
 	payload[len] = '\0';
 	snprintf(message, sizeof(message), "PRIVMSG %s :%s\r\n", target, payload);
-	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+	net_send(syschat, message, strlen(message));
 	return (payload);
 }
 
@@ -48,11 +49,11 @@ void commands_handle_exit(t_syschat *syschat)
 	{
 		bzero(message, BF_SIZE);
 		snprintf(message, BF_SIZE, "PART %s\r\n", name);
-		send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+		net_send(syschat, message, strlen(message));
 	}
 	bzero(message, BF_SIZE);
 	snprintf(message, BF_SIZE, "QUIT :%s\r\n", SYSCHAT_QUIT);
-	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+	net_send(syschat, message, strlen(message));
 
 	error_cleaning(syschat);
 	exit(0);
@@ -79,7 +80,7 @@ void commands_handle_join(t_syschat *syschat, char **parsed)
 	}
 	bzero(message, BF_SIZE);
 	snprintf(message, BF_SIZE, "JOIN %s\r\n", name);
-	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+	net_send(syschat, message, strlen(message));
 	index = buffers_join(syschat, name);
 	if (index != -1)
 		buffers_switch(syschat, index);
@@ -97,7 +98,7 @@ void commands_handle_part(t_syschat *syschat, char **parsed)
 		return ;
 	bzero(message, BF_SIZE);
 	snprintf(message, BF_SIZE, "PART %s\r\n", name);
-	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+	net_send(syschat, message, strlen(message));
 	buffers_leave(syschat, name);
 }
 
@@ -138,7 +139,7 @@ void commands_handle_privmsg(t_syschat *syschat, char **parsed)
 
 	bzero(message, BF_SIZE);
 	snprintf(message, BF_SIZE, "PRIVMSG %s :%s\r\n", parsed[1], parsed[2]);
-	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+	net_send(syschat, message, strlen(message));
 }
 
 void commands_handle_nick(t_syschat *syschat, char **parsed)
@@ -149,7 +150,7 @@ void commands_handle_nick(t_syschat *syschat, char **parsed)
 		return ;
 	bzero(message, BF_SIZE);
 	snprintf(message, BF_SIZE, "NICK %s\r\n", parsed[1]);
-	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+	net_send(syschat, message, strlen(message));
 	free(syschat->nickname);
 	syschat->nickname = strdup(parsed[1]);
 }
@@ -256,7 +257,7 @@ void commands_handle_list(t_syschat *syschat, char **parsed)
 		snprintf(message, BF_SIZE, "LIST %s\r\n", mask);
 	else
 		snprintf(message, BF_SIZE, "LIST\r\n");
-	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+	net_send(syschat, message, strlen(message));
 	bzero(line, sizeof(line));
 	if (mask[0])
 		snprintf(line, sizeof(line), "\e[0;37mListing %s ...\e[0m", mask);
@@ -297,7 +298,7 @@ void commands_handle_ctcp(t_syschat *syschat, char **parsed)
 
 	bzero(message, BF_SIZE);
 	snprintf(message, BF_SIZE, "PRIVMSG %s :%c%s%c\r\n", parsed[1], 1, parsed[2], 1);
-	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+	net_send(syschat, message, strlen(message));
 }
 
 void commands_execute(t_syschat *syschat, char *command)

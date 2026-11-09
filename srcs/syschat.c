@@ -44,16 +44,16 @@ void syschat_say_hello(void)
 {
 	char message[BF_SIZE];
 
-	send(syschat.net_socket, "PASS none\r\n", 11, MSG_DONTWAIT);
+	net_send(&syschat, "PASS none\r\n", 11);
 
 	bzero(message, BF_SIZE);
 	snprintf(message, BF_SIZE, "NICK %s\r\n", syschat.nickname);
-	send(syschat.net_socket, message, strlen(message), MSG_DONTWAIT);
+	net_send(&syschat, message, strlen(message));
 
 	bzero(message, BF_SIZE);
 	snprintf(message, BF_SIZE, "USER %s %s %s %s\r\n", syschat.nickname, syschat.nickname,
 		syschat.nickname, syschat.nickname);
-	send(syschat.net_socket, message, strlen(message), MSG_DONTWAIT);
+	net_send(&syschat, message, strlen(message));
 }
 
 void syschat_echo(char *text)
@@ -195,7 +195,9 @@ void syschat_read_network(void)
 	int			index;
 
 	bzero(chunk, sizeof(chunk));
-	received = recv(syschat.net_socket, chunk, sizeof(chunk) - 1, 0);
+	received = net_recv(&syschat, chunk, sizeof(chunk) - 1);
+	if (received == -1)
+		return ;
 	if (received <= 0)
 	{
 		syschat.running = 0;

@@ -1,4 +1,5 @@
 #include "server.h"
+#include "network.h"
 #include "buffers.h"
 #include "ctcp.h"
 #include "../utils/screen.h"
@@ -32,7 +33,7 @@ void server_handle_ping(t_syschat *syschat, char **parsed, char *srv_message, ch
 	bzero(srv_message, BF_SIZE);
 	bzero(target, SYSCHAT_NAME_LEN);
 	snprintf(message, BF_SIZE, "PONG :%s\r\n", token);
-	send(syschat->net_socket, message, strlen(message), MSG_DONTWAIT);
+	net_send(syschat, message, strlen(message));
 }
 
 void server_handle_join(t_syschat *syschat, char **parsed, char *srv_message, char *target)

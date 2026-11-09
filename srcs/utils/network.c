@@ -1,5 +1,7 @@
 #include "network.h"
 
+#include <errno.h>
+
 static int family;
 
 void network_connect_server(t_syschat *syschat)
@@ -56,4 +58,21 @@ int network_get_ip(t_syschat *syschat, char *ip)
 	freeaddrinfo(res);
 
 	return (0);
+}
+
+int	net_send(t_syschat *syschat, const char *buf, size_t len)
+{
+	return (send(syschat->net_socket, buf, len, MSG_DONTWAIT));
+}
+
+int	net_recv(t_syschat *syschat, char *buf, size_t len)
+{
+	ssize_t	ret;
+
+	ret = recv(syschat->net_socket, buf, len, 0);
+	if (ret >= 0)
+		return ((int) ret);
+	if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+		return (-1);
+	return (-2);
 }
