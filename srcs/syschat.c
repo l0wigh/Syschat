@@ -366,14 +366,52 @@ static void syschat_send_line(char *input)
 }
 
 /*
+** Modifier bits as xterm "modifyOtherKeys" and the kitty keyboard protocol
+** encode them in a key report (the reported number is 1 + the bitmask).
+*/
+#define KEY_MOD_ALT  2
+#define KEY_MOD_CTRL 4
+
+/*
+** A Tab report with modifiers. Shift alone is the classic Shift-Tab (go back
+** one buffer). Any Alt or Ctrl report changes server: Ctrl-Tab and
+** Ctrl-Shift-Tab are what the user asked for, Alt-Tab / Alt-Shift-Tab are the
+** portable form because most terminals never emit a distinct Ctrl-Tab.
+*/
+static void	tab_key(int mods)
+{
+	if (mods & (KEY_MOD_ALT | KEY_MOD_CTRL))
+		buffers_cycle_server(&syschat, (mods & 1) ? -1 : 1);
+	else
+		buffers_cycle(&syschat, (mods & 1) ? -1 : 1);
+}
+
+/*
 ** Byte oriented input handling: keeps reading possible even when a whole
 ** escape sequence (Shift-Tab = ESC [ Z) is split across two reads.
+**
+** Key map:
+**   Tab                     -> next buffer   (current server only)
+**   ESC [ Z                 -> previous buffer
+**   ESC Tab                 -> next server   (Alt-Tab, X10 encoding)
+**   ESC ESC [ Z             -> previous server (Alt-Shift-Tab)
+**   ESC [ 9 ; <mod> u       -> kitty keyboard protocol Tab report
+**   ESC [ 27 ; <mod> ; 9 ~  -> xterm modifyOtherKeys Tab report
+**
+** There is no escape sequence for Ctrl-Tab in a plain xterm: the terminal
+** sends the same 0x09 as Tab, so the two are indistinguishable there. Only
+** terminals speaking the kitty protocol (or modifyOtherKeys) report Ctrl-Tab
+** on its own; the Alt form is what works everywhere.
 */
 void syschat_handle_input(char *buffer, int size)
 {
 	static int	escape = 0;
+	static char	seq[16];
+	static int	seq_len = 0;
 	static int	input_full = 0;
 	int			index;
+	int			key;
+	int			mods;
 
 	for (index = 0; index != size; index++)
 	{
@@ -381,19 +419,66 @@ void syschat_handle_input(char *buffer, int size)
 
 		if (escape == 1)
 		{
-			escape = (c == '[' || c == 'O') ? 2 : 0;
+			if (c == '[' || c == 'O')
+			{
+				escape = 2;
+				seq_len = 0;
+			}
+			else if (c == '	')
+			{
+				escape = 0;
+				buffers_cycle_server(&syschat, 1);
+			}
+			else if (c == '\033')
+				escape = 3;
+			else
+				escape = 0;
 			continue ;
 		}
-		if (escape == 2)
+		if (escape == 3)
 		{
-			escape = 0;
+			/* Second ESC: this is Alt-Shift-Tab (ESC ESC [ Z). */
+			if (c == '[' || c == 'O')
+			{
+				escape = 4;
+				seq_len = 0;
+			}
+			else
+				escape = 0;
+			continue ;
+		}
+		if (escape == 2 || escape == 4)
+		{
+			if (c >= 0x20 && c <= 0x3f)
+			{
+				if (seq_len < (int) sizeof(seq) - 1)
+					seq[seq_len++] = c;
+				continue ;
+			}
+			seq[seq_len] = '\0';
 			if (c == 'Z')
-				buffers_cycle(&syschat, -1);
+			{
+				if (escape == 4)
+					buffers_cycle_server(&syschat, -1);
+				else
+					buffers_cycle(&syschat, -1);
+			}
+			else if (c == 'u')
+			{
+				if (sscanf(seq, "%d;%d", &key, &mods) == 2 && key == 9)
+					tab_key(mods - 1);
+			}
+			else if (c == '~')
+			{
+				if (sscanf(seq, "27;%d;%d", &mods, &key) == 2 && key == 9)
+					tab_key(mods - 1);
+			}
+			escape = 0;
 			continue ;
 		}
 		if (c == '\033')
 			escape = 1;
-		else if (c == '\t')
+		else if (c == '	')
 			buffers_cycle(&syschat, 1);
 		else if (c == 127 || c == 8)
 		{

@@ -43,6 +43,11 @@ python3 tests/functional_colors.py
 echo "--- functional_multi ---"
 python3 tests/functional_multi.py
 
+# Two mock servers: Tab stays a buffer switch, Alt-Tab / Alt-Shift-Tab (and
+# the kitty/modifyOtherKeys Ctrl-Tab reports) change server.
+echo "--- functional_server_tabs ---"
+python3 tests/functional_server_tabs.py
+
 # TLS needs no outside network: self-signed certificate generated on the fly,
 # local TLS server in Python, local plaintext server for the fallback path.
 echo "--- tls_handshake ---"
