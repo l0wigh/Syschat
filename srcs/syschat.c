@@ -164,6 +164,7 @@ void	syschat_conn_close(t_syschat *syschat, int id)
 	conn->net_len = 0;
 	conn->listing = 0;
 	conn->elist_mask = 0;
+	conn->whois_nick[0] = '\0';
 	/*
 	** Relabel first, free after: buffers_relabel() reads conns[id].label
 	** to prefix the surviving tabs, so freeing it earlier would hand it a

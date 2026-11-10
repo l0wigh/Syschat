@@ -228,6 +228,67 @@ static int	numeric_listing(t_syschat *syschat, t_conn *conn, char **parsed, char
 }
 
 /*
+** Trailing parameter of a raw IRC line, exactly as the sender wrote it: the
+** generic formatter below only handles single-token parameters, and a WHOIS
+** realname or channel list contains spaces. Empty string when the line has
+** no trailing parameter.
+*/
+static const char	*trailing_param(const char *raw)
+{
+	const char	*sep;
+
+	sep = strstr(raw, " :");
+	if (!sep)
+		return ("");
+	return (sep + 2);
+}
+
+/*
+** Returns 1 when `code` was a WHOIS numeric and `srv_message`/`target` are
+** filled, 0 when the numeric is not ours (the caller keeps routing it).
+** The text is built here and not by the generic branch: that one prints the
+** last non-empty parameter, which would reduce 311 to the realname alone and
+** 319 to its last channel.
+*/
+static int	numeric_whois(t_syschat *syschat, t_conn *conn, char **parsed,
+	char *srv_message, char *target, int code, const char *raw)
+{
+	const char	*nick;
+	const char	*text;
+
+	if (code != 311 && code != 318 && code != 319 && code != 330 && code != 671)
+		return (0);
+	nick = parsed[3][0] ? parsed[3] : conn->whois_nick;
+	text = trailing_param(raw);
+	/* 311 [me] <nick> <user> <host> * :<realname> */
+	if (code == 311)
+		snprintf(srv_message, BF_SIZE, "\e[0;37m%s is %s@%s (%s)\e[0m",
+			nick, parsed[4], parsed[5], text[0] ? text : parsed[7]);
+	/* 319 <nick> :[@+]#chan #chan */
+	else if (code == 319)
+		snprintf(srv_message, BF_SIZE, "\e[0;37m%s is on: %s\e[0m",
+			nick, text[0] ? text : parsed[4]);
+	/* 330 <nick> <account> :is logged in as */
+	else if (code == 330)
+		snprintf(srv_message, BF_SIZE, "\e[0;37m%s is logged in as %s\e[0m",
+			nick, parsed[4]);
+	/* 671 <nick> :is using a secure connection */
+	else if (code == 671)
+		snprintf(srv_message, BF_SIZE, "\e[0;37m%s %s\e[0m",
+			nick, text[0] ? text : "is using a secure connection");
+	/* 318 <nick> :End of /WHOIS list -- closes the exchange */
+	else
+	{
+		snprintf(srv_message, BF_SIZE, "\e[0;37m-- End of /WHOIS for %s --\e[0m", nick);
+		conn->whois_nick[0] = '\0';
+	}
+	target_chan(target, SYSCHAT_NAME_LEN, syschat_conn_name(conn));
+	if (buffers_find_on(syschat, (unsigned) (conn - syschat->conns), nick) != -1)
+		target_chan(target, SYSCHAT_NAME_LEN, nick);
+	return (1);
+}
+
+/*
 ** Returns 1 when `srv_message` holds something to display, 0 otherwise.
 ** `target` receives the buffer name the message belongs to.
 */
@@ -277,7 +338,14 @@ int server_handle_message(t_syschat *syschat, t_conn *conn, char *srv_message, c
 				if (strncmp(parsed[i], "ELIST=", 6) == 0 && strchr(parsed[i] + 6, 'C'))
 					conn->elist_mask = 1;
 		}
-		displayed = numeric_listing(syschat, conn, parsed, srv_message, target, code);
+		displayed = numeric_whois(syschat, conn, parsed, srv_message, target, code, raw);
+		/* A WHOIS we never got an answer to must not keep its target
+		** forever: 401 on that nick closes it like 318 does. */
+		if (displayed == 0 && code == 401 && conn->whois_nick[0]
+			&& strcasecmp(parsed[3], conn->whois_nick) == 0)
+			conn->whois_nick[0] = '\0';
+		if (displayed == 0)
+			displayed = numeric_listing(syschat, conn, parsed, srv_message, target, code);
 		if (displayed == -1)
 		{
 			const char	*target_name;

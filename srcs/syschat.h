@@ -80,8 +80,17 @@ typedef struct s_conn
 	int			listing;
 	time_t		listing_since;
 	int			list_received;
-	int			elist_mask;
-	char		list_filter[SYSCHAT_NAME_LEN];
+	int				elist_mask;
+	char			list_filter[SYSCHAT_NAME_LEN];
+	/*
+	** Nick a WHOIS was asked for on this connection. The answer arrives as
+	** several separate numerics (311, 319, 330, 671) that the server does
+	** not label with the requester: keeping the target here is what lets
+	** them land in that nick's window. 318 (end of WHOIS) and 401 (no such
+	** nick) clear it, and so does a disconnect: a recycled slot must never
+	** inherit the previous session's target.
+	*/
+	char			whois_nick[SYSCHAT_NAME_LEN];
 	/*
 	** Partial line accumulator. It MUST live here: shared between sockets,
 	** half a line from A and the start of a line from B would be glued

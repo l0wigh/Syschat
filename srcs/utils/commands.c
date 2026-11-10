@@ -517,6 +517,28 @@ void commands_handle_clear(t_syschat *syschat)
 	buffers_clear(syschat, syschat->active);
 }
 
+/*
+** /whois <pseudo> -- the answer comes back as four separate numerics (311,
+** 319, 330, 671) closed by 318. None of them repeats the requester, so the
+** target is remembered on the connection: server.c needs it to pick the
+** window, and 318/401 clear it.
+*/
+void commands_handle_whois(t_syschat *syschat, char **parsed)
+{
+	char	line[BF_SIZE];
+
+	if (parsed[1][0] == '\0')
+	{
+		commands_say(syschat, "usage : /whois <pseudo>");
+		return ;
+	}
+	bzero(line, sizeof(line));
+	snprintf(line, sizeof(line), "WHOIS %s", parsed[1]);
+	if (!send_raw(syschat, line, NULL))
+		return ;
+	snprintf(SYSC(syschat)->whois_nick, SYSCHAT_NAME_LEN, "%s", parsed[1]);
+}
+
 void commands_handle_msg(t_syschat *syschat, char *command)
 {
 	char	*target;
@@ -637,6 +659,7 @@ void commands_handle_cmd_list(t_syschat *syschat)
 		"list [motif]                     -> list the server channels in a buffer",
 		"switch [#<channel>|<label>/#<channel>] -> show the given buffer",
 		"privmsg <username>               -> send a message to a user",
+		"whois <nickname>                 -> who is that user (311/319/330/671)",
 		"nick <new nickname>              -> change your current nickname",
 		"clear                            -> clear the current buffer",
 		"msg <target> <message>           -> send a message to a channel or a user",
@@ -671,6 +694,8 @@ void commands_execute(t_syschat *syschat, char *command)
 		commands_handle_join(syschat, parsed);
 	else if (strcmp(parsed[0], "privmsg") == 0)
 		commands_handle_privmsg(syschat, parsed);
+	else if (strcmp(parsed[0], "whois") == 0)
+		commands_handle_whois(syschat, parsed);
 	else if (strcmp(parsed[0], "nick") == 0)
 		commands_handle_nick(syschat, parsed);
 	else if (strcmp(parsed[0], "clear") == 0)
