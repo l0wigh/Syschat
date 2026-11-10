@@ -8,6 +8,9 @@
 #include "utils/screen.h"
 #include "segfault_catcher/segfault_catcher.h"
 
+#include <errno.h>
+#include <signal.h>
+
 static t_syschat syschat;
 static struct termios oldt, newt;
 static int tty_raw;
@@ -34,6 +37,99 @@ void syschat_terminal_restore(void)
 	tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
 	tty_raw = 0;
 }
+
+/*
+** Password prompt, before raw mode: the line discipline stays canonical (the
+** user keeps backspace and Ctrl-C) and only ECHO is turned off. The saved
+** termios is restored on every exit path -- normal end, EOF, and a fatal
+** signal -- because Ctrl-C here would otherwise leave the user's shell typed
+** blind.
+*/
+static struct termios	pass_saved;
+static volatile sig_atomic_t	pass_echo_off;
+
+static void	pass_restore_echo(void)
+{
+	if (pass_echo_off)
+	{
+		tcsetattr(STDIN_FILENO, TCSANOW, &pass_saved);
+		pass_echo_off = 0;
+	}
+}
+
+static void	pass_signal(int sig)
+{
+	/* tcsetattr() and write() are async-signal-safe: the terminal comes back
+	** even when the signal lands in the middle of the read. */
+	pass_restore_echo();
+	(void) write(STDOUT_FILENO, "\n", 1);
+	_exit(128 + sig);
+}
+
+static void	syschat_ask_password(char *dst, size_t size, const char *prompt)
+{
+	static const int	sigs[] = { SIGINT, SIGTERM, SIGHUP, SIGQUIT };
+	struct sigaction	sa;
+	struct sigaction	old[4];
+	struct termios		noecho;
+	int					tty;
+	int					too_long;
+	size_t				len;
+	ssize_t				read_len;
+	size_t				i;
+	char				c;
+
+	dst[0] = '\0';
+	len = 0;
+	too_long = 0;
+	tty = isatty(STDIN_FILENO);
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = pass_signal;
+	sigemptyset(&sa.sa_mask);
+	/* No SA_RESTART: the handler exits, nothing is resumed anyway. */
+	sa.sa_flags = 0;
+	for (i = 0; i != sizeof(sigs) / sizeof(sigs[0]); i++)
+		sigaction(sigs[i], &sa, &old[i]);
+	/* A pipe or a file is not a terminal: read it as is, change nothing. */
+	if (tty && tcgetattr(STDIN_FILENO, &pass_saved) == 0)
+	{
+		noecho = pass_saved;
+		noecho.c_lflag &= ~ECHO;
+		if (tcsetattr(STDIN_FILENO, TCSANOW, &noecho) == 0)
+			pass_echo_off = 1;
+	}
+	(void) write(STDOUT_FILENO, prompt, strlen(prompt));
+	while ((read_len = read(STDIN_FILENO, &c, 1)) != 0)
+	{
+		if (read_len < 0)
+		{
+			if (errno == EINTR)
+				continue ;
+			break ;
+		}
+		if (c == '\n')
+			break ;
+		/* CR can only come from a pasted CRLF: dropping it keeps a stray
+		** CR out of the IRC line (a CR there would end the command and let
+		** the rest of the password run as a separate one). */
+		if (c == '\r')
+			continue ;
+		if (len + 1 >= size)
+		{
+			too_long = 1;
+			continue ;
+		}
+		dst[len++] = c;
+	}
+	dst[len] = '\0';
+	pass_restore_echo();
+	for (i = 0; i != sizeof(sigs) / sizeof(sigs[0]); i++)
+		sigaction(sigs[i], &old[i], NULL);
+	(void) write(STDOUT_FILENO, "\n", 1);
+	if (too_long)
+		fprintf(stderr, "syschat: password longer than %d characters, truncated\n",
+			SYSCHAT_PASS_LEN - 1);
+}
 static char input[SYSCHAT_LINE_LEN];
 static int input_len = 0;
 
@@ -52,6 +148,30 @@ static int	policy_tls;
 static int	policy_no_tls;
 static int	policy_strict;
 static int	policy_insecure;
+/*
+** The password is asked ONCE, before raw mode and before any connection:
+** it is process wide state, like the TLS policy, so a server added later
+** with /connect gets it without prompting again. Empty means "PASS none".
+*/
+static int	policy_pass;
+static char	policy_password[SYSCHAT_PASS_LEN];
+
+/* Zero a password before handing its memory back, so it does not linger in
+** freed heap blocks. */
+static void	pass_wipe(char *password)
+{
+	if (password)
+		memset(password, 0, strlen(password));
+}
+
+void	syschat_apply_pass_policy(t_conn *conn)
+{
+	if (!conn || policy_password[0] == '\0')
+		return ;
+	pass_wipe(conn->password);
+	free(conn->password);
+	conn->password = strdup(policy_password);
+}
 
 void	syschat_apply_tls_policy(t_conn *conn)
 {
@@ -127,6 +247,7 @@ int	syschat_conn_add(t_syschat *syschat, const char *label, const char *host,
 		return (-1);
 	}
 	syschat_apply_tls_policy(conn);
+	syschat_apply_pass_policy(conn);
 	return (id);
 }
 
@@ -200,9 +321,12 @@ void	syschat_conn_close(t_syschat *syschat, int id)
 	free(conn->label);
 	free(conn->hostname);
 	free(conn->nickname);
+	pass_wipe(conn->password);
+	free(conn->password);
 	conn->label = NULL;
 	conn->hostname = NULL;
 	conn->nickname = NULL;
+	conn->password = NULL;
 	/*
 	** Pure cleanup: closing a slot says nothing about whether the session
 	** is over. Ending the loop is decided by the callers that actually lost
@@ -243,6 +367,10 @@ void syschat_load_config(char **argv, int argc)
 	policy_no_tls = 0;
 	policy_strict = 0;
 	policy_insecure = 0;
+	/* --pass takes no argument: the value is typed at the prompt, never on
+	** the command line where `ps` would show it. */
+	policy_pass = 0;
+	memset(policy_password, 0, sizeof(policy_password));
 	for (i = 1; i < argc; i++)
 	{
 		if (!strcmp(argv[i], "--tls") || !strcmp(argv[i], "-tls"))
@@ -253,6 +381,8 @@ void syschat_load_config(char **argv, int argc)
 			policy_insecure = 1;
 		else if (!strcmp(argv[i], "--tls-required") || !strcmp(argv[i], "-tls-required"))
 			policy_strict = 1;
+		else if (!strcmp(argv[i], "--pass") || !strcmp(argv[i], "-pass"))
+			policy_pass = 1;
 		else if (pos < 3)
 			positional[pos++] = argv[i];
 	}
@@ -315,8 +445,25 @@ void syschat_load_config(char **argv, int argc)
 void syschat_say_hello(t_conn *conn)
 {
 	char message[BF_SIZE];
+	const char *password;
 
-	net_send(conn, "PASS none\r\n", 11);
+	/*
+	** The password replaces the historic "PASS none". IRC has no escaping
+	** inside a parameter, so a value holding a space (a ZNC
+	** "user/network:password" does not, but a passphrase can) or starting
+	** with ':' must use the trailing form, the only one that can carry it.
+	*/
+	password = (conn && conn->password && conn->password[0]) ? conn->password : NULL;
+	if (password && (password[0] == ':' || strchr(password, ' ') != NULL))
+		snprintf(message, BF_SIZE, "PASS :%s\r\n", password);
+	else if (password)
+		snprintf(message, BF_SIZE, "PASS %s\r\n", password);
+	else
+		snprintf(message, BF_SIZE, "PASS none\r\n");
+	net_send(conn, message, strlen(message));
+	/* The line above is stamped with the password: do not let it sit in the
+	** stack frame once it has been handed to the socket. */
+	pass_wipe(message);
 
 	bzero(message, BF_SIZE);
 	snprintf(message, BF_SIZE, "NICK %s\r\n", conn->nickname);
@@ -721,6 +868,22 @@ int main(int argc, char **argv)
 	** "host without nickname" is still a usage error. */
 	syschat_load_config(argv, argc);
 	screen_setup(&syschat);
+
+	/*
+	** Asked here on purpose: after the flags are known, before raw mode (the
+	** line discipline stays canonical and only ECHO is dropped), and before
+	** the connection so syschat_say_hello() already has it. Asking once
+	** makes it a process wide policy: /connect reuses it, never re-prompts.
+	*/
+	if (policy_pass)
+	{
+		int		i;
+
+		syschat_ask_password(policy_password, sizeof(policy_password), "Password: ");
+		for (i = 0; i != syschat.conn_count; i++)
+			if (syschat.conns[i].alive)
+				syschat_apply_pass_policy(&syschat.conns[i]);
+	}
 
 	syschat_terminal_raw();
 
