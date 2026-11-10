@@ -157,8 +157,10 @@ def main():
     pump(0.4)
     last_raw = out.split(b"\x1b[H")[-1]
     marks["active tab visible with 13 buffers"] = b"#chan-with-a-long-name-10" in last_raw
-    marks["tab bar shows it scrolled"] = strip_ansi(
-        last_raw.decode("utf-8", "replace")).startswith("<")
+    # Two bars now: line 0 is the server bar, line 1 the buffer bar, and it
+    # is the buffer bar that has to scroll here.
+    bars = strip_ansi(last_raw.decode("utf-8", "replace")).split("\r\n")
+    marks["tab bar shows it scrolled"] = len(bars) > 1 and bars[1].startswith("<")
     send("/close #beta\n")
     pump(0.5)
     marks["beta_gone_from_tabs"] = b"#beta" not in out[-3000:]
@@ -222,9 +224,16 @@ def main():
             r.append(a[k]); k += 1
         return "".join(r)
     last_frame = strip(raw_frames[-1]) if raw_frames else ""
-    last_tabbar = last_frame.split("\r\n")[0] if last_frame else ""
+    # Line 0 is the servers bar now; the channels are on line 1. Requiring
+    # at least one channel chip there proves the row we read really is the
+    # buffer bar -- "#beta absent from a row that never holds channels" would
+    # pass whether the tab closed or not. (#alpha is off-screen at this point:
+    # the bar has scrolled past it.)
+    rows = last_frame.split("\r\n") if last_frame else []
+    last_tabbar = rows[1] if len(rows) > 1 else ""
+    chips_here = [t for t in last_tabbar.split() if t.startswith("#")]
     checks["prompt_alpha"] = marks["typed_visible"]
-    checks["beta_gone_from_tabs"] = "#beta" not in last_tabbar
+    checks["beta_gone_from_tabs"] = "#beta" not in last_tabbar and bool(chips_here)
     print("LAST TABBAR:", repr(last_tabbar))
 
     checks.update({

@@ -6,83 +6,135 @@
 
 static int family;
 
-static void	network_connect_plain(t_syschat *syschat)
+static void	network_fail(t_syschat *syschat, int conn_err, int fatal)
 {
-	char ip[INET6_ADDRSTRLEN];
+	if (fatal)
+		error_exit(syschat, conn_err);
+}
+
+static int	network_connect_plain(t_syschat *syschat, t_conn *conn, int fatal)
+{
+	char				ip[INET6_ADDRSTRLEN];
+	struct sockaddr_in	v4;
+	struct sockaddr_in6	v6;
 
 	bzero(ip, INET6_ADDRSTRLEN);
-	if (network_get_ip(syschat, ip) == -1)
-		error_exit(syschat, 4);
-
-	if ((syschat->net_socket = socket(family, SOCK_STREAM, 0)) < 0)
-		error_exit(syschat, 5);
-
+	if (network_get_ip(conn, ip) == -1)
+	{
+		network_fail(syschat, 4, fatal);
+		return (-1);
+	}
+	if ((conn->fd = socket(family, SOCK_STREAM, 0)) < 0)
+	{
+		conn->fd = -1;
+		network_fail(syschat, 5, fatal);
+		return (-1);
+	}
 	if (family == AF_INET)
 	{
-		syschat->v4_socket.sin_family = AF_INET;
-		syschat->v4_socket.sin_port = htons(syschat->port);
-		if (inet_pton(family, ip, &syschat->v4_socket.sin_addr) <= 0)
-			error_exit(syschat, 6);
-		if (connect(syschat->net_socket, (struct sockaddr *) &syschat->v4_socket, sizeof(syschat->v4_socket)))
-			error_exit(syschat, 7);
+		bzero(&v4, sizeof(v4));
+		v4.sin_family = AF_INET;
+		v4.sin_port = htons(conn->port);
+		if (inet_pton(family, ip, &v4.sin_addr) <= 0
+			|| connect(conn->fd, (struct sockaddr *) &v4, sizeof(v4)))
+		{
+			close(conn->fd);
+			conn->fd = -1;
+			network_fail(syschat, 7, fatal);
+			return (-1);
+		}
 	}
 	else
 	{
-		syschat->v6_socket.sin6_family = AF_INET6;
-		syschat->v6_socket.sin6_port = htons(syschat->port);
-		if (inet_pton(family, ip, &syschat->v6_socket.sin6_addr) <= 0)
-			error_exit(syschat, 6);
-		if (connect(syschat->net_socket, (struct sockaddr *) &syschat->v6_socket, sizeof(syschat->v6_socket)))
-			error_exit(syschat, 7);
+		bzero(&v6, sizeof(v6));
+		v6.sin6_family = AF_INET6;
+		v6.sin6_port = htons(conn->port);
+		if (inet_pton(family, ip, &v6.sin6_addr) <= 0
+			|| connect(conn->fd, (struct sockaddr *) &v6, sizeof(v6)))
+		{
+			close(conn->fd);
+			conn->fd = -1;
+			network_fail(syschat, 7, fatal);
+			return (-1);
+		}
 	}
+	return (0);
 }
 
-void	network_connect_server(t_syschat *syschat)
+/*
+** `fatal` keeps the historic behaviour for the server given on the command
+** line (a bad host is an error message and exit 4/5/7) while a server added
+** with /connect only loses its own slot.
+*/
+int	network_connect_server(t_syschat *syschat, t_conn *conn, int fatal)
 {
 	char	reason[256];
-	char	line[512];
 
-	network_connect_plain(syschat);
-	if (!syschat->tls)
-		return ;
-	if (tls_connect(syschat, reason, sizeof(reason)) == 0)
-		return ;
+	conn->fd = -1;
+	if (network_connect_plain(syschat, conn, fatal) == -1)
+		return (-1);
+	if (!conn->tls)
+		return (0);
+	if (tls_connect(conn, reason, sizeof(reason)) == 0)
+		return (0);
 	/*
 	** --tls-required: no plaintext, ever. Refusing here is what turns the
 	** handshake into a real guard instead of a hint: an attacker who cuts
 	** the handshake gains nothing.
 	*/
-	if (syschat->tls_required)
-		error_tls_exit(syschat, reason);
+	if (conn->tls_required)
+	{
+		/*
+		** A connection added at runtime must not take the whole client down:
+		** only the connection given on the command line may exit here.
+		*/
+		if (fatal)
+			error_tls_exit(syschat, reason);
+		snprintf(conn->tls_reason, sizeof(conn->tls_reason), "%s", reason);
+		if (conn->fd >= 0)
+		{
+			close(conn->fd);
+			conn->fd = -1;
+		}
+		return (-1);
+	}
 	/*
 	** A TLS failure must never lock the user out of IRC: fall back to the
 	** plaintext connection used before this feature, and say so in clear
 	** so nobody believes the session is encrypted when it is not.
 	*/
-	close(syschat->net_socket);
-	syschat->net_socket = 0;
-	network_connect_plain(syschat);
-	bzero(line, sizeof(line));
-	snprintf(line, sizeof(line),
-		"\e[0;31mTLS: handshake failed (%s) -- falling back to plaintext, "
-		"this session is NOT encrypted\e[0m", reason);
-	buffers_append(syschat, 0, line);
+	if (conn->fd >= 0)
+		close(conn->fd);
+	conn->fd = -1;
+	if (network_connect_plain(syschat, conn, fatal) == -1)
+		return (-1);
+	/*
+	** Do not write the warning here: this connection may have no buffer yet,
+	** and `active` may be another server's tab. Keep the reason, the caller
+	** reports it once the window exists.
+	*/
+	snprintf(conn->tls_reason, sizeof(conn->tls_reason), "%s", reason);
+	return (0);
 }
 
-int	net_send(t_syschat *syschat, const char *buf, size_t len)
+int	net_send(t_conn *conn, const char *buf, size_t len)
 {
-	if (syschat->tls_active)
-		return (tls_send(syschat, buf, len));
-	return (send(syschat->net_socket, buf, len, MSG_DONTWAIT));
+	if (!conn || conn->fd < 0)
+		return (-1);
+	if (conn->tls_active)
+		return (tls_send(conn, buf, len));
+	return (send(conn->fd, buf, len, MSG_DONTWAIT));
 }
 
-int	net_recv(t_syschat *syschat, char *buf, size_t len)
+int	net_recv(t_conn *conn, char *buf, size_t len)
 {
 	ssize_t	ret;
 
-	if (syschat->tls_active)
-		return (tls_recv(syschat, buf, len));
-	ret = recv(syschat->net_socket, buf, len, 0);
+	if (!conn || conn->fd < 0)
+		return (-2);
+	if (conn->tls_active)
+		return (tls_recv(conn, buf, len));
+	ret = recv(conn->fd, buf, len, 0);
 	if (ret >= 0)
 		return ((int) ret);
 	if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
@@ -90,14 +142,16 @@ int	net_recv(t_syschat *syschat, char *buf, size_t len)
 	return (-2);
 }
 
-int	net_pending(t_syschat *syschat)
+int	net_pending(t_conn *conn)
 {
-	if (syschat->tls_active)
-		return (tls_pending(syschat));
+	if (!conn || conn->fd < 0)
+		return (0);
+	if (conn->tls_active)
+		return (tls_pending(conn));
 	return (0);
 }
 
-int network_get_ip(t_syschat *syschat, char *ip)
+int network_get_ip(t_conn *conn, char *ip)
 {
 	void *addr = NULL;
 	struct addrinfo hints, *res, *p;
@@ -106,7 +160,9 @@ int network_get_ip(t_syschat *syschat, char *ip)
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 
-	if (getaddrinfo(syschat->hostname, NULL, &hints, &res) != 0)
+	if (!conn || !conn->hostname)
+		return -1;
+	if (getaddrinfo(conn->hostname, NULL, &hints, &res) != 0)
 		return -1;
 	p = res;
 

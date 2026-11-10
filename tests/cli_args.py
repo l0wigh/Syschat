@@ -7,7 +7,7 @@ refused instead of silently clamped.
 
 Usage: ./build.sh && python3 tests/cli_args.py [binary]
 """
-import subprocess, sys, os, pty, termios
+import subprocess, sys, os, pty, termios, time, select, socket, threading
 
 BIN = sys.argv[1] if len(sys.argv) > 1 else "./syschat"
 
@@ -21,8 +21,6 @@ def run(args, timeout=6):
 
 checks = {}
 
-code, out = run([])
-checks["no argument -> usage, exit 1"] = code == 1 and "hostname" in out
 
 code, out = run(["example.invalid"])
 checks["host only -> usage, exit 1"] = code == 1 and "hostname" in out
@@ -46,6 +44,88 @@ checks["host nick (no port) -> parses, then fails on DNS (4)"] = code == 4
 # contradiction the client must refuse instead of silently picking a winner.
 code, out = run(["--no-tls", "--tls-required", "127.0.0.1", "tester"])
 checks["--no-tls + --tls-required -> refused, exit 11"] = code == 11 and "contradict" in out
+
+
+def starts_without_argument(timeout=8):
+    """No argument must start the client (it can /connect now), not print a
+    usage error: the old check asserted the opposite behaviour.
+
+    Also checks that /? is visible in the LAST frame: with no buffer there is
+    nowhere to append, and text written straight to stdout is wiped by the
+    repaint that follows every command (measured, not assumed).
+    """
+    master, slave = pty.openpty()
+    proc = subprocess.Popen([BIN], stdin=slave, stdout=slave, stderr=slave, close_fds=True)
+    os.close(slave)
+    time.sleep(0.8)
+    alive = proc.poll() is None
+    os.write(master, b"/?\n")
+    time.sleep(0.6)
+    out = b""
+    while True:
+        ready, _, _ = select.select([master], [], [], 0.1)
+        if not ready:
+            break
+        try:
+            chunk = os.read(master, 65536)
+        except OSError:
+            break
+        if not chunk:
+            break
+        out += chunk
+    last_frame = out.decode(errors="replace").split("\033[H")[-1]
+    os.write(master, b"/exit\n")
+    try:
+        rc = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        rc = -1
+    os.close(master)
+    return alive, rc, "Commands list" in last_frame
+
+
+alive, rc, help_visible = starts_without_argument()
+checks["no argument -> starts disconnected, /exit returns 0"] = alive and rc == 0
+checks["no argument -> /? is visible in the last frame"] = help_visible
+
+
+def cli_default_port_is_tls(timeout=8):
+    """No port on the command line must mean 6697 + TLS, like /connect.
+    A bare TCP socket records what the client sends first."""
+    srv = socket.socket()
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    # 127.0.0.2: 127.0.0.1:6697 can already be held by an unrelated listener
+    # in a shared environment, and the point is the port, not the address.
+    srv.bind(("127.0.0.2", 6697))
+    srv.listen(1)
+    seen = {}
+
+    def serve():
+        try:
+            srv.settimeout(4.0)
+            conn, _ = srv.accept()
+            conn.settimeout(2.0)
+            seen["hello"] = conn.recv(8)
+            conn.close()
+        except OSError:
+            seen["hello"] = b""
+        finally:
+            srv.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    master, slave = pty.openpty()
+    proc = subprocess.Popen([BIN, "127.0.0.2", "tester"], stdin=slave, stdout=slave,
+                            stderr=slave, close_fds=True)
+    os.close(slave)
+    time.sleep(2.0)
+    proc.kill()
+    proc.wait()
+    os.close(master)
+    return seen.get("hello", b"")
+
+
+hello = cli_default_port_is_tls()
+checks["host nick (no port) -> 6697 and TLS by default"] = hello[:2] == b"\x16\x03"
 
 
 def run_pty(args, timeout=10):

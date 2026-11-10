@@ -13,7 +13,7 @@
 #endif
 #endif
 
-void ctcp_handle_request(t_syschat *syschat, char **parsed);
+void ctcp_handle_request(t_conn *conn, char **parsed);
 
 #endif // !CTCP_H
 

@@ -27,7 +27,7 @@ char *ctcp_get_distro()
 ** BF_SIZE, whatever the sender claims to be called. */
 #define CTCP_NICK_MAX (SYSCHAT_NAME_LEN - 1)
 
-void ctcp_handle_request(t_syschat *syschat, char **parsed)
+void ctcp_handle_request(t_conn *conn, char **parsed)
 {
 	char message[BF_SIZE];
 
@@ -41,18 +41,18 @@ void ctcp_handle_request(t_syschat *syschat, char **parsed)
 		snprintf(message, sizeof(message), "NOTICE %.*s :%cVERSION %s [%s]%c\r\n",
 			CTCP_NICK_MAX, parsed[0], 1, SYSCHAT_QUIT, os_ver, 1);
 #endif
-		net_send(syschat, message, strlen(message));
+		net_send(conn, message, strlen(message));
 	}
 	else if (parsed[3][1] == 'U' && parsed[3][2] == 'S' && parsed[3][3] == 'E')
 	{
 		snprintf(message, sizeof(message), "NOTICE %.*s :%cUSERINFO %s%c\r\n",
 			CTCP_NICK_MAX, parsed[0], 1, SYSCHAT_USERINFO, 1);
-		net_send(syschat, message, strlen(message));
+		net_send(conn, message, strlen(message));
 	}
 	else if (parsed[3][1] == 'C' && parsed[3][2] == 'L' && parsed[3][3] == 'I')
 	{
 		snprintf(message, sizeof(message), "NOTICE %.*s :%cCLIENTINFO VERSION USERINFO%c\r\n",
 			CTCP_NICK_MAX, parsed[0], 1, 1);
-		net_send(syschat, message, strlen(message));
+		net_send(conn, message, strlen(message));
 	}
 }

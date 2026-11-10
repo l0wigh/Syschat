@@ -35,6 +35,11 @@ python3 tests/functional_input.py
 echo "--- functional_colors ---"
 python3 tests/functional_colors.py
 
+# Two mock servers on 16680/16681: distinct tabs for the same #chan on two
+# networks, per-connection line accumulator, close/exit on every connection.
+echo "--- functional_multi ---"
+python3 tests/functional_multi.py
+
 # TLS needs no outside network: self-signed certificate generated on the fly,
 # local TLS server in Python, local plaintext server for the fallback path.
 echo "--- tls_handshake ---"
