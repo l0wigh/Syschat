@@ -40,6 +40,9 @@ void	syschat_terminal_restore(void);
 #include <time.h>
 
 #define BF_SIZE 512
+/* Longest server password accepted by --pass; the IRC line it feeds is
+** built in a BF_SIZE buffer, so 256 leaves ample room for "PASS :". */
+#define SYSCHAT_PASS_LEN 256
 #define SYSCHAT_QUIT "Syschat 0.4.2-RC1"
 #define SYSCHAT_USERINFO "You want that sweet sweet Syschat client ? https://github.com/L0Wigh/syschat"
 
@@ -70,6 +73,12 @@ typedef struct s_conn
 	char		*label;			/* name used by /server and srv/#chan */
 	char		*hostname;
 	char		*nickname;
+	/*
+	** Server password, asked once at startup when --pass is given and
+	** copied into every connection (like the TLS policy) so /connect never
+	** asks again. NULL or empty means "PASS none", the historic behaviour.
+	*/
+	char		*password;
 	int			port;
 	/* TLS is per connection: two servers may disagree on encryption. */
 	int			tls;
@@ -170,6 +179,17 @@ typedef struct s_syschat
 #define SYSC(s) (&(s)->conns[(s)->current])
 
 void	syschat_apply_tls_policy(t_conn *conn);
+/*
+** Password prompt result codes. SYSCHAT_PASS_OK stores the value in
+** conn->password (one-shot: syschat_say_hello() wipes it after sending).
+** CANCELLED only happens inside the TUI (Ctrl-C).
+*/
+#define SYSCHAT_PASS_OK 0
+#define SYSCHAT_PASS_EMPTY 1
+#define SYSCHAT_PASS_TOO_LONG 2
+#define SYSCHAT_PASS_CANCELLED 3
+int		syschat_prompt_password(t_conn *conn, const char *prompt);
+void	syschat_conn_forget_password(t_conn *conn);
 /* 1 when `nick` matches one of the local /ignore masks. */
 int		syschat_is_ignored(t_syschat *syschat, const char *nick);
 int		syschat_conn_add(t_syschat *syschat, const char *label, const char *host,

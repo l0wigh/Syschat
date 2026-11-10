@@ -17,7 +17,7 @@ void error_print(int err)
 		case 1:
 			fprintf(stderr, "you need to give <hostname> <nickname> arguments.\n"
 				"usage: ./syschat <hostname> <nickname> [port (default 6697, TLS)] "
-				"[--tls] [--no-tls] [--insecure] [--tls-required]");
+				"[--tls] [--no-tls] [--insecure] [--tls-required] [--pass]");
 			break;
 		case 2:
 			fprintf(stderr, "can't get the size of your terminal.");
@@ -86,9 +86,17 @@ void error_cleaning(t_syschat *syschat)
 			free(conn->hostname);
 		if (conn->nickname)
 			free(conn->nickname);
+		if (conn->password)
+		{
+			/* Wipe before freeing: the secret must not stay in a freed
+			** block. */
+			memset(conn->password, 0, strlen(conn->password));
+			free(conn->password);
+		}
 		conn->label = NULL;
 		conn->hostname = NULL;
 		conn->nickname = NULL;
+		conn->password = NULL;
 	}
 	for (int i = 0; i != SYSCHAT_STATUS_LINES; i++)
 	{

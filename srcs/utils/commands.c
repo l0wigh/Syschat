@@ -334,40 +334,85 @@ void commands_handle_switch(t_syschat *syschat, char **parsed)
 void commands_handle_connect(t_syschat *syschat, char **parsed)
 {
 	char	line[BF_SIZE];
+	char	*args[4];
+	char	warn[BF_SIZE];
 	char	*end;
 	long	value;
+	int		argc;
+	int		want_pass;
 	int		port;
 	int		id;
 	int		buf_index;
+	int		status;
+	int		i;
 
-	if (parsed[1][0] == '\0' || parsed[2][0] == '\0' || parsed[3][0] == '\0')
+	/*
+	** --pass is a flag, not a parameter: collect the positionals around it so
+	** "/connect nick srv host --pass" and "/connect --pass nick srv host"
+	** mean the same thing, like the flags on the command line.
+	*/
+	argc = 0;
+	want_pass = 0;
+	warn[0] = '\0';
+	for (i = 1; i < 16 && parsed[i][0] != '\0'; i++)
 	{
-		commands_say(syschat, "usage: /connect <nickname> <server> <host> [port]");
+		if (!strcmp(parsed[i], "--pass") || !strcmp(parsed[i], "-pass"))
+		{
+			want_pass = 1;
+			continue ;
+		}
+		if (argc < 4)
+			args[argc++] = parsed[i];
+	}
+	if (argc < 3)
+	{
+		commands_say(syschat, "usage: /connect <nickname> <server> <host> [port] [--pass]");
 		return ;
 	}
-	if (find_server(syschat, parsed[2]) >= 0)
+	if (find_server(syschat, args[1]) >= 0)
 	{
 		commands_say(syschat, "connect: this server name is already used");
 		return ;
 	}
 	/* No port means the TLS port: /connect asks for encryption by default. */
 	port = 6697;
-	if (parsed[4][0])
+	if (argc > 3)
 	{
 		end = NULL;
-		value = strtol(parsed[4], &end, 10);
-		if (end == parsed[4] || *end != '\0' || value < 1 || value > 65535)
+		value = strtol(args[3], &end, 10);
+		if (end == args[3] || *end != '\0' || value < 1 || value > 65535)
 		{
 			commands_say(syschat, "connect: port must be an integer between 1 and 65535");
 			return ;
 		}
 		port = (int) value;
 	}
-	id = syschat_conn_add(syschat, parsed[2], parsed[3], parsed[1], port);
+	id = syschat_conn_add(syschat, args[1], args[2], args[0], port);
 	if (id < 0)
 	{
 		commands_say(syschat, "connect: no free server slot");
 		return ;
+	}
+	/*
+	** The password, when asked for, is typed here and nowhere else: it is not
+	** kept from an earlier --pass, and it is wiped once the PASS line is sent.
+	** Ctrl-C cancels the whole /connect: no connection, no slot, nothing sent.
+	*/
+	if (want_pass)
+	{
+		status = syschat_prompt_password(&syschat->conns[id], "Password: ");
+		if (status == SYSCHAT_PASS_CANCELLED)
+		{
+			syschat_conn_close(syschat, id);
+			commands_say(syschat, "connect: cancelled");
+			return ;
+		}
+		if (status == SYSCHAT_PASS_EMPTY)
+			snprintf(warn, sizeof(warn), "connect: warning: no password read, "
+				"sending PASS none");
+		else if (status == SYSCHAT_PASS_TOO_LONG)
+			snprintf(warn, sizeof(warn), "connect: warning: password longer than %d "
+				"characters, sending PASS none", SYSCHAT_PASS_LEN - 1);
 	}
 	if (network_connect_server(syschat, &syschat->conns[id], 0) == -1)
 	{
@@ -383,7 +428,7 @@ void commands_handle_connect(t_syschat *syschat, char **parsed)
 				"connect: TLS is required (--tls-required) and the handshake failed: %s",
 				reason);
 		else
-			snprintf(line, sizeof(line), "connect: cannot reach %s:%d", parsed[3], port);
+			snprintf(line, sizeof(line), "connect: cannot reach %s:%d", args[2], port);
 		commands_say(syschat, line);
 		return ;
 	}
@@ -391,6 +436,14 @@ void commands_handle_connect(t_syschat *syschat, char **parsed)
 	buf_index = buffers_new_on(syschat, (unsigned) id, syschat->conns[id].label);
 	if (buf_index != -1)
 		buffers_switch(syschat, buf_index);
+	/*
+	** The password warning must land in the window of the server it is
+	** about, and only once that window exists: written before the connect it
+	** would go to the tab the user was looking at, then be buried by the
+	** switch to the new server.
+	*/
+	if (warn[0])
+		buffers_notice(syschat, (unsigned) id, warn);
 	/*
 	** A handshake that failed falls back to plaintext, and the warning
 	** written by network_connect_server() could not land anywhere: this
@@ -405,8 +458,8 @@ void commands_handle_connect(t_syschat *syschat, char **parsed)
 			syschat->conns[id].tls_reason[0] ? syschat->conns[id].tls_reason : "no answer");
 		buffers_notice(syschat, (unsigned) id, line);
 	}
-	snprintf(line, sizeof(line), "-- connected to %s as %s (%s:%d, %s)", parsed[2],
-		parsed[1], parsed[3], port,
+	snprintf(line, sizeof(line), "-- connected to %s as %s (%s:%d, %s)", args[1],
+		args[0], args[2], port,
 		syschat->conns[id].tls_active ? "TLS" : "plaintext");
 	commands_say(syschat, line);
 }
@@ -1034,7 +1087,7 @@ void commands_handle_cmd_list(t_syschat *syschat)
 {
 	static const char *help[] = {
 		"exit -> leave syschat",
-		"connect <nick> <server> <host> [port] -> open another server",
+		"connect <nick> <server> <host> [port] [--pass] -> open a server",
 		"disconnect [label] -> close a server",
 		"server [label] -> list or show servers",
 		"join #<channel> -> join a channel",
