@@ -509,12 +509,9 @@ void commands_handle_msg(t_syschat *syschat, char *command)
 	if (!sent)
 		return ;
 	bzero(line, sizeof(line));
-	if (target[0] == '#')
-		snprintf(line, sizeof(line), "<%s%s\e[0m> %s",
-			nick_color(SYSC(syschat)->nickname), SYSC(syschat)->nickname, sent);
-	else
-		snprintf(line, sizeof(line), "<%s%s\e[0m> -> <%s%s\e[0m> %s",
-			nick_color(SYSC(syschat)->nickname), SYSC(syschat)->nickname, nick_color(target), target, sent);
+	/* Same format as a channel message: the tab title is the target. */
+	snprintf(line, sizeof(line), "<%s%s\e[0m> %s",
+		nick_color(SYSC(syschat)->nickname), SYSC(syschat)->nickname, sent);
 	index = buffers_route(syschat, target);
 	buffers_append(syschat, index, line);
 	if (truncated)

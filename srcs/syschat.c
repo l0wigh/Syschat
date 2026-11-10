@@ -351,13 +351,10 @@ static void syschat_send_line(char *input)
 	if (!sent)
 		return ;
 	bzero(line, sizeof(line));
-	if (name[0] == '#')
-		snprintf(line, sizeof(line), "<%s%s\e[0m> %s",
-			nick_color(SYSC(&syschat)->nickname), SYSC(&syschat)->nickname, sent);
-	else
-		snprintf(line, sizeof(line), "<%s%s\e[0m> -> <%s%s\e[0m> %s",
-			nick_color(SYSC(&syschat)->nickname), SYSC(&syschat)->nickname,
-			nick_color(name), name, sent);
+	/* The tab title already names the channel or the correspondent: a private
+	** message is echoed exactly like a channel one. */
+	snprintf(line, sizeof(line), "<%s%s\e[0m> %s",
+		nick_color(SYSC(&syschat)->nickname), SYSC(&syschat)->nickname, sent);
 	buffers_append(&syschat, syschat.active, line);
 	if (truncated)
 	{
