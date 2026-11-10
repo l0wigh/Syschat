@@ -429,6 +429,11 @@ int server_handle_message(t_syschat *syschat, t_conn *conn, char *srv_message, c
 				snprintf(srv_message, BF_SIZE, "\e[0;37mModes: %s\e[0m", parsed[4]);
 			else if (code == 329)
 				snprintf(srv_message, BF_SIZE, "\e[0;37mCreated: %s\e[0m", parsed[4]);
+			/* 341 has no trailing text at all: the generic path would show
+			** the channel name alone, as if the client had printed a token. */
+			else if (code == 341)
+				snprintf(srv_message, BF_SIZE, "\e[0;37mInvitation sent to %s for %s\e[0m",
+					parsed[3], parsed[4]);
 			else if (code == 333)
 			{
 				char	setter[SYSCHAT_NAME_LEN];
