@@ -127,6 +127,11 @@ except subprocess.TimeoutExpired:
     proc.kill()
 
 text = strip(out.decode("utf-8", "replace"))
+# A private message is displayed exactly like a channel one: "<nick> text",
+# the correspondent being the tab title. The old "<me> -> <you> text" is gone.
+marks["incoming PM shown as <nick> text"] = "<alice> salut en prive" in text
+marks["outgoing PM shown as <nick> text"] = "<tester> reponse en prive" in text
+marks["old PM arrow format is gone"] = "alice> -> " not in text
 for k, v in marks.items():
     print(("OK   " if v else "FAIL ") + k)
 print("--- server log ---")

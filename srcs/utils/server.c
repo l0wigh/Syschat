@@ -98,12 +98,7 @@ void server_handle_privmsg(t_syschat *syschat, t_conn *conn, char **parsed, char
 	(void) conn;
 	bzero(srv_message, BF_SIZE);
 	if (parsed[2][0] == '#')
-	{
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
-		/* The channel name is already the tab title: no need to repeat it. */
-		snprintf(srv_message, BF_SIZE, "<%s%s\e[0m> %s",
-			nick_color(parsed[0]), parsed[0], parsed[3]);
-	}
 	else
 	{
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[0]);
@@ -114,10 +109,11 @@ void server_handle_privmsg(t_syschat *syschat, t_conn *conn, char **parsed, char
 				parsed[0], parsed[3]);
 			return ;
 		}
-		snprintf(srv_message, BF_SIZE, "<%s%s\e[0m> -> <%s%s\e[0m> %s",
-			nick_color(parsed[0]), parsed[0], nick_color(conn->nickname),
-			conn->nickname, parsed[3]);
 	}
+	/* The tab title is already the channel name or the correspondent's nick:
+	** a private message uses the same format as a channel one. */
+	snprintf(srv_message, BF_SIZE, "<%s%s\e[0m> %s",
+		nick_color(parsed[0]), parsed[0], parsed[3]);
 }
 
 void server_handle_nick(t_syschat *syschat, t_conn *conn, char **parsed, char *srv_message, char *target)
