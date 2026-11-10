@@ -210,6 +210,10 @@ static size_t	chips_bar(t_chip *chips, int n, const char *right_text,
 ** Top bar: the servers. One chip per live connection, the current one
 ** highlighted. A closed slot is not a chip: it would advertise a server the
 ** user can no longer reach.
+**
+** A server the user is not looking at carries the unread count of every
+** buffer it owns, console included: those tabs are on the bottom bar and
+** nothing else would tell the user their server has news.
 */
 static int		server_chips(t_syschat *syschat, t_chip *chips)
 {
@@ -218,10 +222,19 @@ static int		server_chips(t_syschat *syschat, t_chip *chips)
 	n = 0;
 	for (int i = 0; i != syschat->conn_count && n < SYSCHAT_MAX_SERVERS; i++)
 	{
+		int	unread;
+
 		if (!syschat->conns[i].alive)
 			continue ;
 		chips[n].label = syschat->conns[i].label ? syschat->conns[i].label : "?";
-		chips[n].unread = 0;
+		unread = 0;
+		if (i != syschat->current)
+		{
+			for (int j = 0; j != syschat->buffer_count; j++)
+				if (syschat->buffers[j].server_id == (unsigned) i)
+					unread += syschat->buffers[j].unread;
+		}
+		chips[n].unread = unread;
 		chips[n].active = (i == syschat->current);
 		n++;
 	}
