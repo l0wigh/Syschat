@@ -138,7 +138,7 @@ The vendored mbedTLS objects are built once into `build/mbedtls/` (about 30s
 the first time) and reused by the three variants; `./build.sh clean` drops
 them. The Makefile does the same thing under `build/mbedtls/`.
 
-Tests (no unit tests, functional checks only):
+Tests (unit + functional):
 
     tests/run_all.sh                        # offline: release + debug + buffers
 
@@ -148,6 +148,7 @@ Tests (no unit tests, functional checks only):
     ./build.sh && python3 tests/functional_numerics.py # server numerics
     ./build.sh && python3 tests/functional_list.py     # /list
     ./build.sh && python3 tests/functional_input.py    # UTF-8 input, 512-byte limit
+    ./build.sh && python3 tests/functional_prompt_wrap.py # wrapped prompt, 40-column pty
     ./build.sh && python3 tests/functional_colors.py   # nick palette
     ./build.sh && python3 tests/tls_handshake.py       # TLS, fallback, port defaults
     SYSCHAT_NET_TESTS=1 python3 tests/network_smoke.py # real network, opt-in
