@@ -145,6 +145,32 @@ const char	*syschat_conn_name(const t_conn *conn)
 	return (conn->hostname ? conn->hostname : "?");
 }
 
+/*
+** /ignore is a display filter, not a server-side behaviour: the message
+** arrives and is dropped before anything is formatted, so an ignored nick
+** cannot open a buffer or trigger an automatic answer either.
+** A mask is either an exact nick (case-insensitive) or a prefix ("foo*").
+*/
+int	syschat_is_ignored(t_syschat *syschat, const char *nick)
+{
+	size_t	len;
+
+	if (!syschat || !nick || !nick[0])
+		return (0);
+	for (int i = 0; i != syschat->ignore_count; i++)
+	{
+		len = strlen(syschat->ignore[i]);
+		if (len && syschat->ignore[i][len - 1] == '*')
+		{
+			if (strncasecmp(syschat->ignore[i], nick, len - 1) == 0)
+				return (1);
+		}
+		else if (strcasecmp(syschat->ignore[i], nick) == 0)
+			return (1);
+	}
+	return (0);
+}
+
 void	syschat_conn_close(t_syschat *syschat, int id)
 {
 	t_conn	*conn;

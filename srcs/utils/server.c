@@ -118,8 +118,13 @@ void server_handle_privmsg(t_syschat *syschat, t_conn *conn, char **parsed, char
 	const char	*action;
 	size_t		action_len;
 
-	(void) syschat;
 	bzero(srv_message, BF_SIZE);
+	/*
+	** Dropped before anything is formatted: an ignored nick must not open a
+	** buffer, echo, or trigger an automatic CTCP answer.
+	*/
+	if (syschat_is_ignored(syschat, parsed[0]))
+		return ;
 	if (parsed[2][0] == '#')
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
 	else
@@ -189,10 +194,11 @@ void server_handle_mode(t_syschat *syschat, t_conn *conn, char **parsed, char *s
 
 void server_handle_notice(t_syschat *syschat, t_conn *conn, char **parsed, char *srv_message, char *target)
 {
-	(void) syschat;
 	(void) conn;
 	(void) syschat;
 	bzero(srv_message, BF_SIZE);
+	if (syschat_is_ignored(syschat, parsed[0]))
+		return ;
 	if (parsed[2][0] == '#')
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
 	else if (parsed[2][0] == '*' || (conn->nickname && strcasecmp(parsed[2], conn->nickname) == 0))

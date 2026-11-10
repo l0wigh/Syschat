@@ -847,6 +847,73 @@ void commands_handle_invite(t_syschat *syschat, char **parsed)
 	send_raw(syschat, line, NULL);
 }
 
+/*
+** /ignore                 -> list the masks
+** /ignore <nick|nick*>    -> stop showing this nick
+** /ignore -<nick|nick*>   -> show it again
+** Nothing is sent to the server: the messages still arrive and are dropped in
+** server_handle_privmsg()/server_handle_notice(), where the nick is known.
+*/
+void commands_handle_ignore(t_syschat *syschat, char **parsed)
+{
+	char		mask[SYSCHAT_NAME_LEN];
+	char		line[BF_SIZE];
+	const char	*arg;
+	int			remove;
+
+	if (!parsed[1][0])
+	{
+		if (syschat->ignore_count == 0)
+			commands_say(syschat, "ignore: aucun masque");
+		for (int i = 0; i != syschat->ignore_count; i++)
+		{
+			snprintf(line, sizeof(line), "ignore: %s", syschat->ignore[i]);
+			commands_say(syschat, line);
+		}
+		return ;
+	}
+	arg = parsed[1];
+	remove = (arg[0] == '-');
+	if (remove)
+		arg++;
+	if (!arg[0])
+	{
+		commands_say(syschat, "usage : /ignore <pseudo|pseudo*> | /ignore -<pseudo>");
+		return ;
+	}
+	snprintf(mask, sizeof(mask), "%s", arg);
+	for (int i = 0; i != syschat->ignore_count; i++)
+	{
+		if (strcasecmp(syschat->ignore[i], mask) != 0)
+			continue ;
+		if (remove)
+		{
+			for (int j = i; j + 1 < syschat->ignore_count; j++)
+				snprintf(syschat->ignore[j], sizeof(syschat->ignore[j]), "%s",
+					syschat->ignore[j + 1]);
+			syschat->ignore_count--;
+		}
+		snprintf(line, sizeof(line), "ignore: %s %s", remove ? "levé pour" : "déjà actif pour", mask);
+		commands_say(syschat, line);
+		return ;
+	}
+	if (remove)
+	{
+		snprintf(line, sizeof(line), "ignore: %s n'est pas dans la liste", mask);
+		commands_say(syschat, line);
+		return ;
+	}
+	if (syschat->ignore_count >= SYSCHAT_MAX_IGNORES)
+	{
+		commands_say(syschat, "ignore: liste pleine, retire un masque avec /ignore -<pseudo>");
+		return ;
+	}
+	snprintf(syschat->ignore[syschat->ignore_count], SYSCHAT_NAME_LEN, "%s", mask);
+	syschat->ignore_count++;
+	snprintf(line, sizeof(line), "ignore: %s masqué", mask);
+	commands_say(syschat, line);
+}
+
 void commands_handle_msg(t_syschat *syschat, char *command)
 {
 	char	*target;
@@ -989,6 +1056,7 @@ void commands_handle_cmd_list(t_syschat *syschat)
 		"me <text> -> action in channel or query",
 		"notice <nick> <text> -> NOTICE      quote <line> -> raw IRC line",
 		"away [text] -> mark away/back       invite <nick> [#chan] -> invite",
+		"ignore <nick|nick*> -> hide       ignore -<nick> -> show again",
 		"lock <name> -> same as switch",
 		"? -> this list",
 		"Tab / Shift-Tab, next|prev [n] -> cycle buffers",
@@ -1059,6 +1127,8 @@ void commands_execute(t_syschat *syschat, char *command)
 		commands_handle_away(syschat, command);
 	else if (strcmp(parsed[0], "invite") == 0)
 		commands_handle_invite(syschat, parsed);
+	else if (strcmp(parsed[0], "ignore") == 0)
+		commands_handle_ignore(syschat, parsed);
 	else if (strcmp(parsed[0], "lock") == 0 || strcmp(parsed[0], "switch") == 0
 		|| strcmp(parsed[0], "buffer") == 0)
 		commands_handle_switch(syschat, parsed);

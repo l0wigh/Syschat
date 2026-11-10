@@ -45,6 +45,7 @@ void	syschat_terminal_restore(void);
 
 #define SYSCHAT_MAX_BUFFERS 16
 #define SYSCHAT_MAX_SERVERS 4
+#define SYSCHAT_MAX_IGNORES 16
 #define SYSCHAT_NAME_LEN 64
 #define SYSCHAT_HISTORY 256
 #define SYSCHAT_LINE_LEN 1024
@@ -150,6 +151,13 @@ typedef struct s_syschat
 	*/
 	char				*status[SYSCHAT_STATUS_LINES];
 	int					status_count;
+	/*
+	** Masks the user does not want to see. Kept in the client, not on the
+	** server: /ignore is a local filter, the messages still arrive and are
+	** dropped on display. "nick*" filters a prefix, "nick" an exact nick.
+	*/
+	char				ignore[SYSCHAT_MAX_IGNORES][SYSCHAT_NAME_LEN];
+	int					ignore_count;
 	t_buffer			buffers[SYSCHAT_MAX_BUFFERS];
 	int					buffer_count;
 	int					active;
@@ -162,6 +170,8 @@ typedef struct s_syschat
 #define SYSC(s) (&(s)->conns[(s)->current])
 
 void	syschat_apply_tls_policy(t_conn *conn);
+/* 1 when `nick` matches one of the local /ignore masks. */
+int		syschat_is_ignored(t_syschat *syschat, const char *nick);
 int		syschat_conn_add(t_syschat *syschat, const char *label, const char *host,
 			const char *nickname, int port);
 void	syschat_conn_close(t_syschat *syschat, int id);
