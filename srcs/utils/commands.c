@@ -752,6 +752,101 @@ void commands_handle_me(t_syschat *syschat, char *command)
 	buffers_append(syschat, buffers_route(syschat, target), echo);
 }
 
+/*
+** /notice <cible> <texte> -- NOTICE, the only message that must never trigger
+** an automatic answer (an away reply to a notice is how mail loops start).
+** The text is read back from the raw line, like /msg. Nothing is echoed
+** locally: the server sends our own notice back only if it accepts it.
+*/
+void commands_handle_notice(t_syschat *syschat, char *command)
+{
+	char	line[BF_SIZE * 2];
+	char	*arg;
+	char	*text;
+
+	arg = commands_rest(command, 1);
+	text = strchr(arg, ' ');
+	if (!text || !*arg)
+	{
+		commands_say(syschat, "usage : /notice <pseudo|canal> <texte>");
+		return ;
+	}
+	*text++ = '\0';
+	if (*text == ':')
+		text++;
+	if (!*text)
+	{
+		commands_say(syschat, "usage : /notice <pseudo|canal> <texte>");
+		return ;
+	}
+	snprintf(line, sizeof(line), "NOTICE %s :%s", arg, text);
+	send_raw(syschat, line, NULL);
+}
+
+/*
+** /quote <ligne IRC> -- sends the line as typed, for what the client does not
+** wrap yet (a service command, a server-specific MODE, an op command...).
+** Nothing is added and nothing is validated: the server answers.
+*/
+void commands_handle_quote(t_syschat *syschat, char *command)
+{
+	char	*line;
+	int		truncated;
+
+	line = commands_rest(command, 1);
+	if (!*line)
+	{
+		commands_say(syschat, "usage : /quote <ligne IRC>");
+		return ;
+	}
+	if (!send_raw(syschat, line, &truncated))
+		return ;
+	if (truncated)
+		commands_say(syschat, "\e[0;31mligne tronquée à la limite serveur (512 octets)\e[0m");
+}
+
+/*
+** /away [texte] -- /away alone marks us back. The acknowledgement is not sent
+** by us: 305 (RPL_UNAWAY) and 306 (RPL_NOWAWAY) come from the server and land
+** in its window through the generic formatter.
+*/
+void commands_handle_away(t_syschat *syschat, char *command)
+{
+	char	line[BF_SIZE * 2];
+	char	*text;
+
+	text = commands_rest(command, 1);
+	if (*text)
+		snprintf(line, sizeof(line), "AWAY :%s", text);
+	else
+		snprintf(line, sizeof(line), "AWAY");
+	send_raw(syschat, line, NULL);
+}
+
+/*
+** /invite <pseudo> [#canal] -- the channel defaults to the one being looked
+** at; RPL_INVITING (341) is already routed to the channel tab.
+*/
+void commands_handle_invite(t_syschat *syschat, char **parsed)
+{
+	char		line[BF_SIZE];
+	const char	*nick;
+	const char	*canal;
+
+	if (!parsed[1][0])
+	{
+		commands_say(syschat, "usage : /invite <pseudo> [#canal]");
+		return ;
+	}
+	nick = parsed[1];
+	canal = parsed[2][0] ? parsed[2] : commands_active_channel(syschat);
+	if (canal)
+		snprintf(line, sizeof(line), "INVITE %s %s", nick, canal);
+	else
+		snprintf(line, sizeof(line), "INVITE %s", nick);
+	send_raw(syschat, line, NULL);
+}
+
 void commands_handle_msg(t_syschat *syschat, char *command)
 {
 	char	*target;
@@ -892,6 +987,8 @@ void commands_handle_cmd_list(t_syschat *syschat)
 		"clear -> clear the current buffer",
 		"msg <target> <text> -> send a message",
 		"me <text> -> action in channel or query",
+		"notice <nick> <text> -> NOTICE      quote <line> -> raw IRC line",
+		"away [text] -> mark away/back       invite <nick> [#chan] -> invite",
 		"lock <name> -> same as switch",
 		"? -> this list",
 		"Tab / Shift-Tab, next|prev [n] -> cycle buffers",
@@ -954,6 +1051,14 @@ void commands_execute(t_syschat *syschat, char *command)
 		commands_handle_msg(syschat, command);
 	else if (strcmp(parsed[0], "me") == 0)
 		commands_handle_me(syschat, command);
+	else if (strcmp(parsed[0], "notice") == 0)
+		commands_handle_notice(syschat, command);
+	else if (strcmp(parsed[0], "quote") == 0 || strcmp(parsed[0], "raw") == 0)
+		commands_handle_quote(syschat, command);
+	else if (strcmp(parsed[0], "away") == 0 || strcmp(parsed[0], "back") == 0)
+		commands_handle_away(syschat, command);
+	else if (strcmp(parsed[0], "invite") == 0)
+		commands_handle_invite(syschat, parsed);
 	else if (strcmp(parsed[0], "lock") == 0 || strcmp(parsed[0], "switch") == 0
 		|| strcmp(parsed[0], "buffer") == 0)
 		commands_handle_switch(syschat, parsed);
