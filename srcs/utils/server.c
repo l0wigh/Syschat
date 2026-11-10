@@ -92,23 +92,55 @@ void server_handle_part(t_syschat *syschat, t_conn *conn, char **parsed, char *s
 	snprintf(srv_message, BF_SIZE, "-!- %s%s\e[0m just left", nick_color(parsed[0]), parsed[0]);
 }
 
+/*
+** Recognises a CTCP ACTION payload ("\001ACTION waves\001") and points *text
+** at the text, *len at its length without the closing delimiter. Returns 1 on
+** a match (even an empty action, which is not a VERSION request), 0 otherwise.
+** Compared byte by byte: a short payload must not run past its NUL.
+*/
+static int	server_ctcp_action(const char *payload, const char **text, size_t *len)
+{
+	size_t		size;
+
+	size = strlen(payload);
+	if (size < 8 || payload[0] != 1
+		|| strncasecmp(payload + 1, "ACTION ", 7) != 0)
+		return (0);
+	*text = payload + 8;
+	*len = size - 8;
+	if (*len && (*text)[*len - 1] == 1)
+		(*len)--;
+	return (1);
+}
+
 void server_handle_privmsg(t_syschat *syschat, t_conn *conn, char **parsed, char *srv_message, char *target)
 {
+	const char	*action;
+	size_t		action_len;
+
 	(void) syschat;
-	(void) conn;
 	bzero(srv_message, BF_SIZE);
 	if (parsed[2][0] == '#')
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
 	else
-	{
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[0]);
-		if (parsed[3][0] == 1)
-		{
-			ctcp_handle_request(conn, parsed);
-			snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] Asked for CTCP: \e[0;36m%s\e[0m",
-				parsed[0], parsed[3]);
-			return ;
-		}
+	/*
+	** A CTCP ACTION is a user speaking, not a protocol request: it is shown
+	** as "* nick text" in a channel as well as in a query, and it must never
+	** reach ctcp_handle_request() (which would swallow it in a query).
+	*/
+	if (server_ctcp_action(parsed[3], &action, &action_len))
+	{
+		snprintf(srv_message, BF_SIZE, "\e[0;36m* %s%s\e[0m %.*s",
+			nick_color(parsed[0]), parsed[0], (int) action_len, action);
+		return ;
+	}
+	if (parsed[2][0] != '#' && parsed[3][0] == 1)
+	{
+		ctcp_handle_request(conn, parsed);
+		snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] Asked for CTCP: \e[0;36m%s\e[0m",
+			parsed[0], parsed[3]);
+		return ;
 	}
 	/* The tab title is already the channel name or the correspondent's nick:
 	** a private message uses the same format as a channel one. */

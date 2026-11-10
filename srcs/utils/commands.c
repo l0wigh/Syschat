@@ -701,6 +701,57 @@ void commands_handle_kick(t_syschat *syschat, char *command, char **parsed)
 	send_raw(syschat, line, NULL);
 }
 
+/*
+** /me <texte> -- CTCP ACTION to the tab being looked at.
+**
+** The text is read back from the raw line, not from parsed[]: commands_parse()
+** stops at 16 parameters and collapses repeated spaces, and an action keeps
+** its own spelling. Both \001 delimiters are part of the budget: a truncated
+** ACTION stays a well-formed CTCP instead of losing its closing \001.
+*/
+void commands_handle_me(t_syschat *syschat, char *command)
+{
+	char		line[BF_SIZE * 2];
+	char		echo[BF_SIZE * 2];
+	char		*text;
+	const char	*target;
+	size_t		room;
+	size_t		len;
+	int			kind;
+
+	kind = buffers_active_kind(syschat);
+	target = buffers_active_name(syschat);
+	if (!target || (kind != BUF_CHANNEL && kind != BUF_PRIVATE))
+	{
+		commands_say(syschat, "usage : /me <texte> (dans un canal ou une conversation)");
+		return ;
+	}
+	text = commands_rest(command, 1);
+	if (!*text)
+	{
+		commands_say(syschat, "usage : /me <texte>");
+		return ;
+	}
+	/* 512 - CRLF(2) - "PRIVMSG "(8) - ' '(1) - ':'(1) - target - "\001ACTION "(8) - closing \001 */
+	room = IRC_MAX_LINE - 2 - 8 - 1 - 1 - strlen(target) - 8 - 1;
+	len = strlen(text);
+	if (len > room)
+	{
+		len = room;
+		while (len > 0 && ((unsigned char) text[len] & 0xC0) == 0x80)
+			len--;
+	}
+	snprintf(line, sizeof(line), "PRIVMSG %s :%cACTION %.*s%c",
+		target, 1, (int) len, text, 1);
+	if (!send_raw(syschat, line, NULL))
+		return ;
+	bzero(echo, sizeof(echo));
+	snprintf(echo, sizeof(echo), "\e[0;36m* %s%s\e[0m %.*s",
+		nick_color(SYSC(syschat)->nickname), SYSC(syschat)->nickname,
+		(int) len, text);
+	buffers_append(syschat, buffers_route(syschat, target), echo);
+}
+
 void commands_handle_msg(t_syschat *syschat, char *command)
 {
 	char	*target;
@@ -829,6 +880,7 @@ void commands_handle_cmd_list(t_syschat *syschat)
 		"nick <new nickname>              -> change your current nickname",
 		"clear                            -> clear the current buffer",
 		"msg <target> <message>           -> send a message to a channel or a user",
+		"me <text>                        -> action in the current channel or query",
 		"lock <name>                      -> same as switch (kept for compat)",
 		"?                                -> this list",
 		"Tab / Shift-Tab, next|prev [n]  -> next / previous buffer",
@@ -876,6 +928,8 @@ void commands_execute(t_syschat *syschat, char *command)
 		commands_handle_clear(syschat);
 	else if (strcmp(parsed[0], "msg") == 0)
 		commands_handle_msg(syschat, command);
+	else if (strcmp(parsed[0], "me") == 0)
+		commands_handle_me(syschat, command);
 	else if (strcmp(parsed[0], "lock") == 0 || strcmp(parsed[0], "switch") == 0
 		|| strcmp(parsed[0], "buffer") == 0)
 		commands_handle_switch(syschat, parsed);
