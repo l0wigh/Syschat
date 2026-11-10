@@ -40,6 +40,43 @@ const char *send_privmsg(t_syschat *syschat, const char *target, const char *tex
 	return (payload);
 }
 
+/*
+** Single exit point for a raw IRC line: the caller passes the command and its
+** whole parameter list without CRLF ("WHOIS nick", "MODE #chan +o bob"), the
+** helper enforces the 512-byte server limit on a complete UTF-8 character and
+** sets *truncated when it had to cut. Returns the line actually sent (static
+** buffer, valid until the next call), or NULL when nothing could be sent.
+*/
+const char *send_raw(t_syschat *syschat, const char *line, int *truncated)
+{
+	static char	payload[IRC_MAX_LINE + 1];
+	char		message[IRC_MAX_LINE + 2];
+	size_t		room;
+	size_t		len;
+
+	if (truncated)
+		*truncated = 0;
+	if (!line)
+		return (NULL);
+	room = IRC_MAX_LINE - 2;
+	len = strlen(line);
+	if (len > room)
+	{
+		len = room;
+		while (len > 0 && ((unsigned char) line[len] & 0xC0) == 0x80)
+			len--;
+		if (truncated)
+			*truncated = 1;
+	}
+	if (len == 0)
+		return (NULL);
+	memcpy(payload, line, len);
+	payload[len] = '\0';
+	snprintf(message, sizeof(message), "%s\r\n", payload);
+	net_send(SYSC(syschat), message, len + 2);
+	return (payload);
+}
+
 void commands_handle_exit(t_syschat *syschat)
 {
 	char	*name;

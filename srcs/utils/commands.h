@@ -5,6 +5,8 @@
 #include "error.h"
 
 const char *send_privmsg(t_syschat *syschat, const char *target, const char *text, int *truncated);
+const char *send_raw(t_syschat *syschat, const char *line, int *truncated);
+
 void commands_execute(t_syschat *syschat, char *command);
 char **commands_parse(char *command);
 
