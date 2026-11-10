@@ -180,6 +180,8 @@ typedef struct s_syschat
 
 void	syschat_apply_tls_policy(t_conn *conn);
 void	syschat_apply_pass_policy(t_conn *conn);
+/* Wipe the process wide password; called from error_cleaning(). */
+void	syschat_pass_policy_clear(void);
 /* 1 when `nick` matches one of the local /ignore masks. */
 int		syschat_is_ignored(t_syschat *syschat, const char *nick);
 int		syschat_conn_add(t_syschat *syschat, const char *label, const char *host,

@@ -39,6 +39,35 @@ void syschat_terminal_restore(void)
 }
 
 /*
+** The password is asked ONCE, before raw mode and before any connection: it
+** is process wide state, like the TLS policy, so a server added later with
+** /connect gets it without prompting again. Empty means "PASS none".
+**
+** It lives above the prompt code because the signal handler has to be able
+** to wipe it too: a half-typed secret must not be the only copy left in a
+** dying process.
+*/
+static int	policy_pass;
+static char	policy_password[SYSCHAT_PASS_LEN];
+
+/* Zero a password before handing its memory back, so it does not linger in
+** freed heap blocks or in the process wide buffer. */
+static void	pass_wipe(char *password)
+{
+	if (password)
+		memset(password, 0, strlen(password));
+}
+
+/* Called from error_cleaning(): every fatal path and the normal exit wipe
+** the process wide copy, including the one taken before a connection
+** exists. */
+void	syschat_pass_policy_clear(void)
+{
+	pass_wipe(policy_password);
+	policy_password[0] = '\0';
+}
+
+/*
 ** Password prompt, before raw mode: the line discipline stays canonical (the
 ** user keeps backspace and Ctrl-C) and only ECHO is turned off. The saved
 ** termios is restored on every exit path -- normal end, EOF, and a fatal
@@ -62,6 +91,10 @@ static void	pass_signal(int sig)
 	/* tcsetattr() and write() are async-signal-safe: the terminal comes back
 	** even when the signal lands in the middle of the read. */
 	pass_restore_echo();
+	/* Whatever was typed so far dies with the process: do not leave it in
+	** a readable buffer. */
+	pass_wipe(policy_password);
+	policy_password[0] = '\0';
 	(void) write(STDOUT_FILENO, "\n", 1);
 	_exit(128 + sig);
 }
@@ -160,21 +193,6 @@ static int	policy_tls;
 static int	policy_no_tls;
 static int	policy_strict;
 static int	policy_insecure;
-/*
-** The password is asked ONCE, before raw mode and before any connection:
-** it is process wide state, like the TLS policy, so a server added later
-** with /connect gets it without prompting again. Empty means "PASS none".
-*/
-static int	policy_pass;
-static char	policy_password[SYSCHAT_PASS_LEN];
-
-/* Zero a password before handing its memory back, so it does not linger in
-** freed heap blocks. */
-static void	pass_wipe(char *password)
-{
-	if (password)
-		memset(password, 0, strlen(password));
-}
 
 void	syschat_apply_pass_policy(t_conn *conn)
 {

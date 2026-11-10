@@ -63,6 +63,12 @@ void error_cleaning(t_syschat *syschat)
 {
 	t_conn	*conn;
 
+	/*
+	** The process wide password does not belong to a connection: wipe it on
+	** every fatal path, including the ones taken before any connection
+	** exists (syschat == NULL), where the early return below would hide it.
+	*/
+	syschat_pass_policy_clear();
 	if (!syschat)
 		return;
 	syschat_terminal_restore();
