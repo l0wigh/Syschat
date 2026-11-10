@@ -539,6 +539,168 @@ void commands_handle_whois(t_syschat *syschat, char **parsed)
 	snprintf(SYSC(syschat)->whois_nick, SYSCHAT_NAME_LEN, "%s", parsed[1]);
 }
 
+/*
+** Everything after the `skip` first words of a raw command line, trailing
+** CR/LF removed. commands_parse() splits on single spaces and stops at 16
+** parameters: the text of a /topic or the reason of a /kick must keep its own
+** spelling, so it is read back from the raw line, like commands_handle_msg().
+*/
+static char	*commands_rest(char *command, int skip)
+{
+	char	*p;
+	int		word;
+
+	p = command;
+	if (*p == '/')
+		p++;
+	for (word = 0; word < skip; word++)
+	{
+		while (*p && *p != ' ')
+			p++;
+		while (*p == ' ')
+			p++;
+	}
+	p[strcspn(p, "\r\n")] = '\0';
+	return (p);
+}
+
+/*
+** The channel the user is looking at, or NULL when the active tab is not one.
+** Commands that default to "the current channel" must say so instead of
+** guessing a channel name.
+*/
+static const char	*commands_active_channel(t_syschat *syschat)
+{
+	if (buffers_active_kind(syschat) != BUF_CHANNEL)
+		return (NULL);
+	return (buffers_active_name(syschat));
+}
+
+/*
+** /names [canal] -- 353 (the list) and 366 (its end) are already routed to the
+** channel tab by server.c: nothing to add on the receive side.
+*/
+void commands_handle_names(t_syschat *syschat, char **parsed)
+{
+	char	line[BF_SIZE];
+
+	if (parsed[1][0])
+		snprintf(line, sizeof(line), "NAMES %s", parsed[1]);
+	else
+		snprintf(line, sizeof(line), "NAMES");
+	send_raw(syschat, line, NULL);
+}
+
+/*
+** /topic                -> TOPIC on the current channel (read it)
+** /topic #canal         -> read that channel's topic
+** /topic <sujet>        -> set the topic of the current channel
+** /topic #canal <sujet> -> set that channel's topic
+** 331/332/333 already reach the channel tab.
+*/
+void commands_handle_topic(t_syschat *syschat, char *command, char **parsed)
+{
+	char	line[BF_SIZE];
+	char	canal[SYSCHAT_NAME_LEN];
+	char	*arg;
+	char	*text;
+	const char	*active;
+
+	(void) parsed;
+	active = commands_active_channel(syschat);
+	arg = commands_rest(command, 1);
+	bzero(canal, sizeof(canal));
+	text = NULL;
+	if (*arg == '#')
+	{
+		snprintf(canal, sizeof(canal), "%s", arg);
+		text = strchr(canal, ' ');
+		if (text)
+			*text++ = '\0';
+	}
+	else if (*arg)
+		text = arg;
+	if (!canal[0])
+	{
+		if (!active)
+		{
+			commands_say(syschat, "usage : /topic [#canal] [sujet]");
+			return ;
+		}
+		snprintf(canal, sizeof(canal), "%s", active);
+	}
+	if (text && *text)
+		snprintf(line, sizeof(line), "TOPIC %s :%s", canal, text);
+	else
+		snprintf(line, sizeof(line), "TOPIC %s", canal);
+	send_raw(syschat, line, NULL);
+}
+
+/*
+** /mode [cible] [modes] -- without arguments it asks for our own modes
+** (RPL_UMODEIS 221); with a target, the parameters are passed through as
+** typed so "+o bob" stays "+o bob". MODE on the receive side already exists.
+*/
+void commands_handle_mode(t_syschat *syschat, char *command, char **parsed)
+{
+	char	line[BF_SIZE];
+	char	*rest;
+
+	(void) parsed;
+	rest = commands_rest(command, 1);
+	if (*rest)
+		snprintf(line, sizeof(line), "MODE %s", rest);
+	else if (SYSC(syschat)->nickname)
+		snprintf(line, sizeof(line), "MODE %s", SYSC(syschat)->nickname);
+	else
+		return ;
+	send_raw(syschat, line, NULL);
+}
+
+/*
+** /kick [#canal] <pseudo> [raison] -- the channel defaults to the current one,
+** and the reason keeps its spaces. KICK is already parsed on the receive side.
+*/
+void commands_handle_kick(t_syschat *syschat, char *command, char **parsed)
+{
+	char		line[BF_SIZE];
+	char		canal[SYSCHAT_NAME_LEN];
+	char		*reason;
+	const char	*active;
+	const char	*nick;
+	int			skip;
+
+	active = commands_active_channel(syschat);
+	skip = 2;
+	if (parsed[1][0] == '#')
+	{
+		snprintf(canal, sizeof(canal), "%s", parsed[1]);
+		nick = parsed[2];
+		skip = 3;
+	}
+	else
+	{
+		if (!active)
+		{
+			commands_say(syschat, "usage : /kick [#canal] <pseudo> [raison]");
+			return ;
+		}
+		snprintf(canal, sizeof(canal), "%s", active);
+		nick = parsed[1];
+	}
+	if (nick[0] == '\0')
+	{
+		commands_say(syschat, "usage : /kick [#canal] <pseudo> [raison]");
+		return ;
+	}
+	reason = commands_rest(command, skip);
+	if (*reason)
+		snprintf(line, sizeof(line), "KICK %s %s :%s", canal, nick, reason);
+	else
+		snprintf(line, sizeof(line), "KICK %s %s", canal, nick);
+	send_raw(syschat, line, NULL);
+}
+
 void commands_handle_msg(t_syschat *syschat, char *command)
 {
 	char	*target;
@@ -660,6 +822,10 @@ void commands_handle_cmd_list(t_syschat *syschat)
 		"switch [#<channel>|<label>/#<channel>] -> show the given buffer",
 		"privmsg <username>               -> send a message to a user",
 		"whois <nickname>                 -> who is that user (311/319/330/671)",
+		"names [channel]                  -> list the nicknames of a channel",
+		"topic [#channel] [text]          -> read or set a channel topic",
+		"mode [target] [modes]            -> show or change modes",
+		"kick [#channel] <nick> [reason]  -> kick a user from a channel",
 		"nick <new nickname>              -> change your current nickname",
 		"clear                            -> clear the current buffer",
 		"msg <target> <message>           -> send a message to a channel or a user",
@@ -696,6 +862,14 @@ void commands_execute(t_syschat *syschat, char *command)
 		commands_handle_privmsg(syschat, parsed);
 	else if (strcmp(parsed[0], "whois") == 0)
 		commands_handle_whois(syschat, parsed);
+	else if (strcmp(parsed[0], "names") == 0)
+		commands_handle_names(syschat, parsed);
+	else if (strcmp(parsed[0], "topic") == 0)
+		commands_handle_topic(syschat, command, parsed);
+	else if (strcmp(parsed[0], "mode") == 0)
+		commands_handle_mode(syschat, command, parsed);
+	else if (strcmp(parsed[0], "kick") == 0)
+		commands_handle_kick(syschat, command, parsed);
 	else if (strcmp(parsed[0], "nick") == 0)
 		commands_handle_nick(syschat, parsed);
 	else if (strcmp(parsed[0], "clear") == 0)
