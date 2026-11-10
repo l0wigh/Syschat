@@ -92,23 +92,60 @@ void server_handle_part(t_syschat *syschat, t_conn *conn, char **parsed, char *s
 	snprintf(srv_message, BF_SIZE, "-!- %s%s\e[0m just left", nick_color(parsed[0]), parsed[0]);
 }
 
+/*
+** Recognises a CTCP ACTION payload ("\001ACTION waves\001") and points *text
+** at the text, *len at its length without the closing delimiter. Returns 1 on
+** a match (even an empty action, which is not a VERSION request), 0 otherwise.
+** Compared byte by byte: a short payload must not run past its NUL.
+*/
+static int	server_ctcp_action(const char *payload, const char **text, size_t *len)
+{
+	size_t		size;
+
+	size = strlen(payload);
+	if (size < 8 || payload[0] != 1
+		|| strncasecmp(payload + 1, "ACTION ", 7) != 0)
+		return (0);
+	*text = payload + 8;
+	*len = size - 8;
+	if (*len && (*text)[*len - 1] == 1)
+		(*len)--;
+	return (1);
+}
+
 void server_handle_privmsg(t_syschat *syschat, t_conn *conn, char **parsed, char *srv_message, char *target)
 {
-	(void) syschat;
-	(void) conn;
+	const char	*action;
+	size_t		action_len;
+
 	bzero(srv_message, BF_SIZE);
+	/*
+	** Dropped before anything is formatted: an ignored nick must not open a
+	** buffer, echo, or trigger an automatic CTCP answer.
+	*/
+	if (syschat_is_ignored(syschat, parsed[0]))
+		return ;
 	if (parsed[2][0] == '#')
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
 	else
-	{
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[0]);
-		if (parsed[3][0] == 1)
-		{
-			ctcp_handle_request(conn, parsed);
-			snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] Asked for CTCP: \e[0;36m%s\e[0m",
-				parsed[0], parsed[3]);
-			return ;
-		}
+	/*
+	** A CTCP ACTION is a user speaking, not a protocol request: it is shown
+	** as "* nick text" in a channel as well as in a query, and it must never
+	** reach ctcp_handle_request() (which would swallow it in a query).
+	*/
+	if (server_ctcp_action(parsed[3], &action, &action_len))
+	{
+		snprintf(srv_message, BF_SIZE, "\e[0;36m* %s%s\e[0m %.*s",
+			nick_color(parsed[0]), parsed[0], (int) action_len, action);
+		return ;
+	}
+	if (parsed[2][0] != '#' && parsed[3][0] == 1)
+	{
+		ctcp_handle_request(conn, parsed);
+		snprintf(srv_message, BF_SIZE, "[\e[0;35m%s\e[0m] Asked for CTCP: \e[0;36m%s\e[0m",
+			parsed[0], parsed[3]);
+		return ;
 	}
 	/* The tab title is already the channel name or the correspondent's nick:
 	** a private message uses the same format as a channel one. */
@@ -157,10 +194,11 @@ void server_handle_mode(t_syschat *syschat, t_conn *conn, char **parsed, char *s
 
 void server_handle_notice(t_syschat *syschat, t_conn *conn, char **parsed, char *srv_message, char *target)
 {
-	(void) syschat;
 	(void) conn;
 	(void) syschat;
 	bzero(srv_message, BF_SIZE);
+	if (syschat_is_ignored(syschat, parsed[0]))
+		return ;
 	if (parsed[2][0] == '#')
 		target_chan(target, SYSCHAT_NAME_LEN, parsed[2]);
 	else if (parsed[2][0] == '*' || (conn->nickname && strcasecmp(parsed[2], conn->nickname) == 0))
@@ -228,6 +266,67 @@ static int	numeric_listing(t_syschat *syschat, t_conn *conn, char **parsed, char
 }
 
 /*
+** Trailing parameter of a raw IRC line, exactly as the sender wrote it: the
+** generic formatter below only handles single-token parameters, and a WHOIS
+** realname or channel list contains spaces. Empty string when the line has
+** no trailing parameter.
+*/
+static const char	*trailing_param(const char *raw)
+{
+	const char	*sep;
+
+	sep = strstr(raw, " :");
+	if (!sep)
+		return ("");
+	return (sep + 2);
+}
+
+/*
+** Returns 1 when `code` was a WHOIS numeric and `srv_message`/`target` are
+** filled, 0 when the numeric is not ours (the caller keeps routing it).
+** The text is built here and not by the generic branch: that one prints the
+** last non-empty parameter, which would reduce 311 to the realname alone and
+** 319 to its last channel.
+*/
+static int	numeric_whois(t_syschat *syschat, t_conn *conn, char **parsed,
+	char *srv_message, char *target, int code, const char *raw)
+{
+	const char	*nick;
+	const char	*text;
+
+	if (code != 311 && code != 318 && code != 319 && code != 330 && code != 671)
+		return (0);
+	nick = parsed[3][0] ? parsed[3] : conn->whois_nick;
+	text = trailing_param(raw);
+	/* 311 [me] <nick> <user> <host> * :<realname> */
+	if (code == 311)
+		snprintf(srv_message, BF_SIZE, "\e[0;37m%s is %s@%s (%s)\e[0m",
+			nick, parsed[4], parsed[5], text[0] ? text : parsed[7]);
+	/* 319 <nick> :[@+]#chan #chan */
+	else if (code == 319)
+		snprintf(srv_message, BF_SIZE, "\e[0;37m%s is on: %s\e[0m",
+			nick, text[0] ? text : parsed[4]);
+	/* 330 <nick> <account> :is logged in as */
+	else if (code == 330)
+		snprintf(srv_message, BF_SIZE, "\e[0;37m%s is logged in as %s\e[0m",
+			nick, parsed[4]);
+	/* 671 <nick> :is using a secure connection */
+	else if (code == 671)
+		snprintf(srv_message, BF_SIZE, "\e[0;37m%s %s\e[0m",
+			nick, text[0] ? text : "is using a secure connection");
+	/* 318 <nick> :End of /WHOIS list -- closes the exchange */
+	else
+	{
+		snprintf(srv_message, BF_SIZE, "\e[0;37m-- End of /WHOIS for %s --\e[0m", nick);
+		conn->whois_nick[0] = '\0';
+	}
+	target_chan(target, SYSCHAT_NAME_LEN, syschat_conn_name(conn));
+	if (buffers_find_on(syschat, (unsigned) (conn - syschat->conns), nick) != -1)
+		target_chan(target, SYSCHAT_NAME_LEN, nick);
+	return (1);
+}
+
+/*
 ** Returns 1 when `srv_message` holds something to display, 0 otherwise.
 ** `target` receives the buffer name the message belongs to.
 */
@@ -277,7 +376,14 @@ int server_handle_message(t_syschat *syschat, t_conn *conn, char *srv_message, c
 				if (strncmp(parsed[i], "ELIST=", 6) == 0 && strchr(parsed[i] + 6, 'C'))
 					conn->elist_mask = 1;
 		}
-		displayed = numeric_listing(syschat, conn, parsed, srv_message, target, code);
+		displayed = numeric_whois(syschat, conn, parsed, srv_message, target, code, raw);
+		/* A WHOIS we never got an answer to must not keep its target
+		** forever: 401 on that nick closes it like 318 does. */
+		if (displayed == 0 && code == 401 && conn->whois_nick[0]
+			&& strcasecmp(parsed[3], conn->whois_nick) == 0)
+			conn->whois_nick[0] = '\0';
+		if (displayed == 0)
+			displayed = numeric_listing(syschat, conn, parsed, srv_message, target, code);
 		if (displayed == -1)
 		{
 			const char	*target_name;
@@ -323,6 +429,11 @@ int server_handle_message(t_syschat *syschat, t_conn *conn, char *srv_message, c
 				snprintf(srv_message, BF_SIZE, "\e[0;37mModes: %s\e[0m", parsed[4]);
 			else if (code == 329)
 				snprintf(srv_message, BF_SIZE, "\e[0;37mCreated: %s\e[0m", parsed[4]);
+			/* 341 has no trailing text at all: the generic path would show
+			** the channel name alone, as if the client had printed a token. */
+			else if (code == 341)
+				snprintf(srv_message, BF_SIZE, "\e[0;37mInvitation sent to %s for %s\e[0m",
+					parsed[3], parsed[4]);
 			else if (code == 333)
 			{
 				char	setter[SYSCHAT_NAME_LEN];

@@ -40,6 +40,43 @@ const char *send_privmsg(t_syschat *syschat, const char *target, const char *tex
 	return (payload);
 }
 
+/*
+** Single exit point for a raw IRC line: the caller passes the command and its
+** whole parameter list without CRLF ("WHOIS nick", "MODE #chan +o bob"), the
+** helper enforces the 512-byte server limit on a complete UTF-8 character and
+** sets *truncated when it had to cut. Returns the line actually sent (static
+** buffer, valid until the next call), or NULL when nothing could be sent.
+*/
+const char *send_raw(t_syschat *syschat, const char *line, int *truncated)
+{
+	static char	payload[IRC_MAX_LINE + 1];
+	char		message[IRC_MAX_LINE + 2];
+	size_t		room;
+	size_t		len;
+
+	if (truncated)
+		*truncated = 0;
+	if (!line)
+		return (NULL);
+	room = IRC_MAX_LINE - 2;
+	len = strlen(line);
+	if (len > room)
+	{
+		len = room;
+		while (len > 0 && ((unsigned char) line[len] & 0xC0) == 0x80)
+			len--;
+		if (truncated)
+			*truncated = 1;
+	}
+	if (len == 0)
+		return (NULL);
+	memcpy(payload, line, len);
+	payload[len] = '\0';
+	snprintf(message, sizeof(message), "%s\r\n", payload);
+	net_send(SYSC(syschat), message, len + 2);
+	return (payload);
+}
+
 void commands_handle_exit(t_syschat *syschat)
 {
 	char	*name;
@@ -480,6 +517,403 @@ void commands_handle_clear(t_syschat *syschat)
 	buffers_clear(syschat, syschat->active);
 }
 
+/*
+** /whois <pseudo> -- the answer comes back as four separate numerics (311,
+** 319, 330, 671) closed by 318. None of them repeats the requester, so the
+** target is remembered on the connection: server.c needs it to pick the
+** window, and 318/401 clear it.
+*/
+void commands_handle_whois(t_syschat *syschat, char **parsed)
+{
+	char	line[BF_SIZE];
+
+	if (parsed[1][0] == '\0')
+	{
+		commands_say(syschat, "usage : /whois <pseudo>");
+		return ;
+	}
+	bzero(line, sizeof(line));
+	snprintf(line, sizeof(line), "WHOIS %s", parsed[1]);
+	if (!send_raw(syschat, line, NULL))
+		return ;
+	snprintf(SYSC(syschat)->whois_nick, SYSCHAT_NAME_LEN, "%s", parsed[1]);
+}
+
+/*
+** Everything after the `skip` first words of a raw command line, trailing
+** CR/LF removed. commands_parse() splits on single spaces and stops at 16
+** parameters: the text of a /topic or the reason of a /kick must keep its own
+** spelling, so it is read back from the raw line, like commands_handle_msg().
+*/
+static char	*commands_rest(char *command, int skip)
+{
+	char	*p;
+	int		word;
+
+	p = command;
+	if (*p == '/')
+		p++;
+	for (word = 0; word < skip; word++)
+	{
+		while (*p && *p != ' ')
+			p++;
+		while (*p == ' ')
+			p++;
+	}
+	p[strcspn(p, "\r\n")] = '\0';
+	return (p);
+}
+
+/*
+** The channel the user is looking at, or NULL when the active tab is not one.
+** Commands that default to "the current channel" must say so instead of
+** guessing a channel name.
+*/
+static const char	*commands_active_channel(t_syschat *syschat)
+{
+	if (buffers_active_kind(syschat) != BUF_CHANNEL)
+		return (NULL);
+	return (buffers_active_name(syschat));
+}
+
+/*
+** /names [canal] -- 353 (the list) and 366 (its end) are already routed to the
+** channel tab by server.c: nothing to add on the receive side.
+*/
+void commands_handle_names(t_syschat *syschat, char **parsed)
+{
+	char	line[BF_SIZE];
+
+	if (parsed[1][0])
+		snprintf(line, sizeof(line), "NAMES %s", parsed[1]);
+	else
+		snprintf(line, sizeof(line), "NAMES");
+	send_raw(syschat, line, NULL);
+}
+
+/*
+** /topic                -> TOPIC on the current channel (read it)
+** /topic #canal         -> read that channel's topic
+** /topic <sujet>        -> set the topic of the current channel
+** /topic #canal <sujet> -> set that channel's topic
+** 331/332/333 already reach the channel tab.
+*/
+void commands_handle_topic(t_syschat *syschat, char *command, char **parsed)
+{
+	char	line[BF_SIZE];
+	char	canal[SYSCHAT_NAME_LEN];
+	char	*arg;
+	char	*text;
+	const char	*active;
+
+	(void) parsed;
+	active = commands_active_channel(syschat);
+	arg = commands_rest(command, 1);
+	bzero(canal, sizeof(canal));
+	text = NULL;
+	if (*arg == '#')
+	{
+		snprintf(canal, sizeof(canal), "%s", arg);
+		text = strchr(canal, ' ');
+		if (text)
+			*text++ = '\0';
+	}
+	else if (*arg)
+		text = arg;
+	if (!canal[0])
+	{
+		if (!active)
+		{
+			commands_say(syschat, "usage : /topic [#canal] [sujet]");
+			return ;
+		}
+		snprintf(canal, sizeof(canal), "%s", active);
+	}
+	if (text && *text)
+		snprintf(line, sizeof(line), "TOPIC %s :%s", canal, text);
+	else
+		snprintf(line, sizeof(line), "TOPIC %s", canal);
+	send_raw(syschat, line, NULL);
+}
+
+/*
+** /mode [cible] [modes] -- without arguments it asks for our own modes
+** (RPL_UMODEIS 221); with a target, the parameters are passed through as
+** typed so "+o bob" stays "+o bob". MODE on the receive side already exists.
+*/
+void commands_handle_mode(t_syschat *syschat, char *command, char **parsed)
+{
+	char	line[BF_SIZE];
+	char	*rest;
+
+	(void) parsed;
+	rest = commands_rest(command, 1);
+	if (*rest)
+		snprintf(line, sizeof(line), "MODE %s", rest);
+	else if (SYSC(syschat)->nickname)
+		snprintf(line, sizeof(line), "MODE %s", SYSC(syschat)->nickname);
+	else
+		return ;
+	send_raw(syschat, line, NULL);
+}
+
+/*
+** /kick [#canal] <pseudo> [raison] -- the channel defaults to the current one,
+** and the reason keeps its spaces. KICK is already parsed on the receive side.
+*/
+void commands_handle_kick(t_syschat *syschat, char *command, char **parsed)
+{
+	char		line[BF_SIZE];
+	char		canal[SYSCHAT_NAME_LEN];
+	char		*reason;
+	const char	*active;
+	const char	*nick;
+	int			skip;
+
+	active = commands_active_channel(syschat);
+	skip = 2;
+	if (parsed[1][0] == '#')
+	{
+		snprintf(canal, sizeof(canal), "%s", parsed[1]);
+		nick = parsed[2];
+		skip = 3;
+	}
+	else
+	{
+		if (!active)
+		{
+			commands_say(syschat, "usage : /kick [#canal] <pseudo> [raison]");
+			return ;
+		}
+		snprintf(canal, sizeof(canal), "%s", active);
+		nick = parsed[1];
+	}
+	if (nick[0] == '\0')
+	{
+		commands_say(syschat, "usage : /kick [#canal] <pseudo> [raison]");
+		return ;
+	}
+	reason = commands_rest(command, skip);
+	if (*reason)
+		snprintf(line, sizeof(line), "KICK %s %s :%s", canal, nick, reason);
+	else
+		snprintf(line, sizeof(line), "KICK %s %s", canal, nick);
+	send_raw(syschat, line, NULL);
+}
+
+/*
+** /me <texte> -- CTCP ACTION to the tab being looked at.
+**
+** The text is read back from the raw line, not from parsed[]: commands_parse()
+** stops at 16 parameters and collapses repeated spaces, and an action keeps
+** its own spelling. Both \001 delimiters are part of the budget: a truncated
+** ACTION stays a well-formed CTCP instead of losing its closing \001.
+*/
+void commands_handle_me(t_syschat *syschat, char *command)
+{
+	char		line[BF_SIZE * 2];
+	char		echo[BF_SIZE * 2];
+	char		*text;
+	const char	*target;
+	size_t		room;
+	size_t		len;
+	int			kind;
+
+	kind = buffers_active_kind(syschat);
+	target = buffers_active_name(syschat);
+	if (!target || (kind != BUF_CHANNEL && kind != BUF_PRIVATE))
+	{
+		commands_say(syschat, "usage : /me <texte> (dans un canal ou une conversation)");
+		return ;
+	}
+	text = commands_rest(command, 1);
+	if (!*text)
+	{
+		commands_say(syschat, "usage : /me <texte>");
+		return ;
+	}
+	/* 512 - CRLF(2) - "PRIVMSG "(8) - ' '(1) - ':'(1) - target - "\001ACTION "(8) - closing \001 */
+	room = IRC_MAX_LINE - 2 - 8 - 1 - 1 - strlen(target) - 8 - 1;
+	len = strlen(text);
+	if (len > room)
+	{
+		len = room;
+		while (len > 0 && ((unsigned char) text[len] & 0xC0) == 0x80)
+			len--;
+	}
+	snprintf(line, sizeof(line), "PRIVMSG %s :%cACTION %.*s%c",
+		target, 1, (int) len, text, 1);
+	if (!send_raw(syschat, line, NULL))
+		return ;
+	bzero(echo, sizeof(echo));
+	snprintf(echo, sizeof(echo), "\e[0;36m* %s%s\e[0m %.*s",
+		nick_color(SYSC(syschat)->nickname), SYSC(syschat)->nickname,
+		(int) len, text);
+	buffers_append(syschat, buffers_route(syschat, target), echo);
+}
+
+/*
+** /notice <cible> <texte> -- NOTICE, the only message that must never trigger
+** an automatic answer (an away reply to a notice is how mail loops start).
+** The text is read back from the raw line, like /msg. Nothing is echoed
+** locally: the server sends our own notice back only if it accepts it.
+*/
+void commands_handle_notice(t_syschat *syschat, char *command)
+{
+	char	line[BF_SIZE * 2];
+	char	*arg;
+	char	*text;
+
+	arg = commands_rest(command, 1);
+	text = strchr(arg, ' ');
+	if (!text || !*arg)
+	{
+		commands_say(syschat, "usage : /notice <pseudo|canal> <texte>");
+		return ;
+	}
+	*text++ = '\0';
+	if (*text == ':')
+		text++;
+	if (!*text)
+	{
+		commands_say(syschat, "usage : /notice <pseudo|canal> <texte>");
+		return ;
+	}
+	snprintf(line, sizeof(line), "NOTICE %s :%s", arg, text);
+	send_raw(syschat, line, NULL);
+}
+
+/*
+** /quote <ligne IRC> -- sends the line as typed, for what the client does not
+** wrap yet (a service command, a server-specific MODE, an op command...).
+** Nothing is added and nothing is validated: the server answers.
+*/
+void commands_handle_quote(t_syschat *syschat, char *command)
+{
+	char	*line;
+	int		truncated;
+
+	line = commands_rest(command, 1);
+	if (!*line)
+	{
+		commands_say(syschat, "usage : /quote <ligne IRC>");
+		return ;
+	}
+	if (!send_raw(syschat, line, &truncated))
+		return ;
+	if (truncated)
+		commands_say(syschat, "\e[0;31mligne tronquée à la limite serveur (512 octets)\e[0m");
+}
+
+/*
+** /away [texte] -- /away alone marks us back. The acknowledgement is not sent
+** by us: 305 (RPL_UNAWAY) and 306 (RPL_NOWAWAY) come from the server and land
+** in its window through the generic formatter.
+*/
+void commands_handle_away(t_syschat *syschat, char *command)
+{
+	char	line[BF_SIZE * 2];
+	char	*text;
+
+	text = commands_rest(command, 1);
+	if (*text)
+		snprintf(line, sizeof(line), "AWAY :%s", text);
+	else
+		snprintf(line, sizeof(line), "AWAY");
+	send_raw(syschat, line, NULL);
+}
+
+/*
+** /invite <pseudo> [#canal] -- the channel defaults to the one being looked
+** at; RPL_INVITING (341) is already routed to the channel tab.
+*/
+void commands_handle_invite(t_syschat *syschat, char **parsed)
+{
+	char		line[BF_SIZE];
+	const char	*nick;
+	const char	*canal;
+
+	if (!parsed[1][0])
+	{
+		commands_say(syschat, "usage : /invite <pseudo> [#canal]");
+		return ;
+	}
+	nick = parsed[1];
+	canal = parsed[2][0] ? parsed[2] : commands_active_channel(syschat);
+	if (canal)
+		snprintf(line, sizeof(line), "INVITE %s %s", nick, canal);
+	else
+		snprintf(line, sizeof(line), "INVITE %s", nick);
+	send_raw(syschat, line, NULL);
+}
+
+/*
+** /ignore                 -> list the masks
+** /ignore <nick|nick*>    -> stop showing this nick
+** /ignore -<nick|nick*>   -> show it again
+** Nothing is sent to the server: the messages still arrive and are dropped in
+** server_handle_privmsg()/server_handle_notice(), where the nick is known.
+*/
+void commands_handle_ignore(t_syschat *syschat, char **parsed)
+{
+	char		mask[SYSCHAT_NAME_LEN];
+	char		line[BF_SIZE];
+	const char	*arg;
+	int			remove;
+
+	if (!parsed[1][0])
+	{
+		if (syschat->ignore_count == 0)
+			commands_say(syschat, "ignore: aucun masque");
+		for (int i = 0; i != syschat->ignore_count; i++)
+		{
+			snprintf(line, sizeof(line), "ignore: %s", syschat->ignore[i]);
+			commands_say(syschat, line);
+		}
+		return ;
+	}
+	arg = parsed[1];
+	remove = (arg[0] == '-');
+	if (remove)
+		arg++;
+	if (!arg[0])
+	{
+		commands_say(syschat, "usage : /ignore <pseudo|pseudo*> | /ignore -<pseudo>");
+		return ;
+	}
+	snprintf(mask, sizeof(mask), "%s", arg);
+	for (int i = 0; i != syschat->ignore_count; i++)
+	{
+		if (strcasecmp(syschat->ignore[i], mask) != 0)
+			continue ;
+		if (remove)
+		{
+			for (int j = i; j + 1 < syschat->ignore_count; j++)
+				snprintf(syschat->ignore[j], sizeof(syschat->ignore[j]), "%s",
+					syschat->ignore[j + 1]);
+			syschat->ignore_count--;
+		}
+		snprintf(line, sizeof(line), "ignore: %s %s", remove ? "levé pour" : "déjà actif pour", mask);
+		commands_say(syschat, line);
+		return ;
+	}
+	if (remove)
+	{
+		snprintf(line, sizeof(line), "ignore: %s n'est pas dans la liste", mask);
+		commands_say(syschat, line);
+		return ;
+	}
+	if (syschat->ignore_count >= SYSCHAT_MAX_IGNORES)
+	{
+		commands_say(syschat, "ignore: liste pleine, retire un masque avec /ignore -<pseudo>");
+		return ;
+	}
+	snprintf(syschat->ignore[syschat->ignore_count], SYSCHAT_NAME_LEN, "%s", mask);
+	syschat->ignore_count++;
+	snprintf(line, sizeof(line), "ignore: %s masqué", mask);
+	commands_say(syschat, line);
+}
+
 void commands_handle_msg(t_syschat *syschat, char *command)
 {
 	char	*target;
@@ -583,35 +1017,68 @@ void commands_handle_list(t_syschat *syschat, char **parsed)
 	buffers_append(syschat, index, line);
 }
 
+/*
+** A help row is 78 columns at most: two cells of HELP_CELL, the first one
+** padded, so nothing wraps on an 80-column terminal.
+*/
+#define HELP_CELL 40
+
+/*
+** /? -- one row per command when it fits, two per row otherwise. The list
+** grows with every new command and this answer goes into the status ring,
+** which the empty frame only shows the tail of: at one row per command the
+** "Commands list" header had already scrolled out of a 24-line terminal. The
+** columns keep every entry verbatim, they only share rows.
+*/
 void commands_handle_cmd_list(t_syschat *syschat)
 {
 	static const char *help[] = {
-		"Commands list",
-		"-------------",
-		"exit                             -> Well... exit syschat",
-		"connect <nick> <server> <host> [port] -> open another server (port 6697 = TLS)",
-		"disconnect [label]               -> close a server connection",
-		"server [label]                   -> list servers, or show one server window",
-		"join #<channel>                  -> join the given channel",
-		"part [#<channel>]                -> leave a channel",
-		"close [#<channel>]               -> same as part",
-		"close <label>/<channel>          -> part a channel on another server",
-		"close <label>                    -> close a whole server connection",
-		"list [motif]                     -> list the server channels in a buffer",
-		"switch [#<channel>|<label>/#<channel>] -> show the given buffer",
-		"privmsg <username>               -> send a message to a user",
-		"nick <new nickname>              -> change your current nickname",
-		"clear                            -> clear the current buffer",
-		"msg <target> <message>           -> send a message to a channel or a user",
-		"lock <name>                      -> same as switch (kept for compat)",
-		"?                                -> this list",
-		"Tab / Shift-Tab, next|prev [n]  -> next / previous buffer",
-		"Alt-Tab / Alt-Shift-Tab          -> next / previous server",
+		"exit -> leave syschat",
+		"connect <nick> <server> <host> [port] -> open another server",
+		"disconnect [label] -> close a server",
+		"server [label] -> list or show servers",
+		"join #<channel> -> join a channel",
+		"part [#<channel>] -> leave a channel",
+		"close [#<channel>] -> same as part",
+		"close <label>/<chan> -> another server",
+		"close <label> -> close a connection",
+		"list [motif] -> list server channels",
+		"switch [#<chan>|<label>/#<chan>] -> show a buffer",
+		"privmsg <nick> -> same as msg",
+		"whois <nick> -> who is that user",
+		"names [channel] -> list nicknames",
+		"topic [#chan] [text] -> read or set a topic",
+		"mode [target] [modes] -> show or set",
+		"kick [#chan] <nick> -> kick a user",
+		"nick <pseudo> -> change your nickname",
+		"clear -> clear the current buffer",
+		"msg <target> <text> -> send a message",
+		"me <text> -> action in channel or query",
+		"notice <nick> <text> -> NOTICE      quote <line> -> raw IRC line",
+		"away [text] -> mark away/back       invite <nick> [#chan] -> invite",
+		"ignore <nick|nick*> -> hide       ignore -<nick> -> show again",
+		"lock <name> -> same as switch",
+		"? -> this list",
+		"Tab / Shift-Tab, next|prev [n] -> cycle buffers",
+		"Alt-Tab / Alt-Shift-Tab -> cycle servers",
 		NULL
 	};
+	char	line[BF_SIZE];
+	size_t	left;
 
+	commands_say(syschat, "Commands list");
 	for (int i = 0; help[i]; i++)
-		commands_say(syschat, help[i]);
+	{
+		left = strlen(help[i]);
+		if (help[i + 1] && left < HELP_CELL && strlen(help[i + 1]) < HELP_CELL)
+		{
+			snprintf(line, sizeof(line), "%-*s%s", HELP_CELL - 1, help[i], help[i + 1]);
+			commands_say(syschat, line);
+			i++;
+		}
+		else
+			commands_say(syschat, help[i]);
+	}
 }
 
 void commands_handle_ctcp(t_syschat *syschat, char **parsed)
@@ -634,12 +1101,34 @@ void commands_execute(t_syschat *syschat, char *command)
 		commands_handle_join(syschat, parsed);
 	else if (strcmp(parsed[0], "privmsg") == 0)
 		commands_handle_privmsg(syschat, parsed);
+	else if (strcmp(parsed[0], "whois") == 0)
+		commands_handle_whois(syschat, parsed);
+	else if (strcmp(parsed[0], "names") == 0)
+		commands_handle_names(syschat, parsed);
+	else if (strcmp(parsed[0], "topic") == 0)
+		commands_handle_topic(syschat, command, parsed);
+	else if (strcmp(parsed[0], "mode") == 0)
+		commands_handle_mode(syschat, command, parsed);
+	else if (strcmp(parsed[0], "kick") == 0)
+		commands_handle_kick(syschat, command, parsed);
 	else if (strcmp(parsed[0], "nick") == 0)
 		commands_handle_nick(syschat, parsed);
 	else if (strcmp(parsed[0], "clear") == 0)
 		commands_handle_clear(syschat);
 	else if (strcmp(parsed[0], "msg") == 0)
 		commands_handle_msg(syschat, command);
+	else if (strcmp(parsed[0], "me") == 0)
+		commands_handle_me(syschat, command);
+	else if (strcmp(parsed[0], "notice") == 0)
+		commands_handle_notice(syschat, command);
+	else if (strcmp(parsed[0], "quote") == 0 || strcmp(parsed[0], "raw") == 0)
+		commands_handle_quote(syschat, command);
+	else if (strcmp(parsed[0], "away") == 0 || strcmp(parsed[0], "back") == 0)
+		commands_handle_away(syschat, command);
+	else if (strcmp(parsed[0], "invite") == 0)
+		commands_handle_invite(syschat, parsed);
+	else if (strcmp(parsed[0], "ignore") == 0)
+		commands_handle_ignore(syschat, parsed);
 	else if (strcmp(parsed[0], "lock") == 0 || strcmp(parsed[0], "switch") == 0
 		|| strcmp(parsed[0], "buffer") == 0)
 		commands_handle_switch(syschat, parsed);
