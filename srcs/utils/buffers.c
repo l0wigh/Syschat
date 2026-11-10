@@ -390,9 +390,9 @@ void buffers_cycle(t_syschat *syschat, int step)
 	/*
 	** Tab / Shift-Tab move inside the buffer bar, which only holds the
 	** buffers of the CURRENT server -- its channels, its private messages
-	** and its /list window. Jumping to another server's "chan" from a key
-	** press is the silent routing the multi-server work forbids; /server and
-	** /switch <label>/<buffer> stay the explicit ways across servers.
+	** and its /list window. Cycling one key across servers' tabs would be the
+	** silent routing the multi-server work forbids, so the cross-server
+	** gesture is explicit and lives in buffers_cycle_server().
 	*/
 	n = 0;
 	pos = -1;
@@ -411,6 +411,48 @@ void buffers_cycle(t_syschat *syschat, int step)
 	if (pos < 0)
 		pos = (step > 0) ? -1 : 0;
 	buffers_switch(syschat, list[(pos + step + n) % n]);
+}
+
+/*
+** Alt-Tab / Alt-Shift-Tab: change server outright and land on that server's
+** console window, so the user always knows which connection they are typing
+** into. Tab / Shift-Tab stay inside the current server on purpose (see
+** buffers_cycle); this is the explicit cross-server gesture.
+*/
+void buffers_cycle_server(t_syschat *syschat, int step)
+{
+	int	list[SYSCHAT_MAX_SERVERS];
+	int	n;
+	int	pos;
+	int	target;
+	int	index;
+
+	if (!syschat || step == 0)
+		return ;
+	n = 0;
+	pos = -1;
+	for (int i = 0; i != syschat->conn_count; i++)
+	{
+		if (!syschat->conns[i].alive || !syschat->conns[i].label)
+			continue ;
+		if (i == syschat->current)
+			pos = n;
+		list[n++] = i;
+	}
+	if (n < 1)
+		return ;
+	if (pos < 0)
+		pos = (step > 0) ? -1 : 0;
+	target = list[(pos + (step > 0 ? 1 : -1) + n) % n];
+	index = buffers_find_on(syschat, (unsigned) target, syschat->conns[target].label);
+	/* A live connection can have lost its console tab (rare, but the slot
+	** is what matters here): take any buffer that belongs to that server
+	** rather than pretending the key press did nothing. */
+	for (int i = 0; index == -1 && i != syschat->buffer_count; i++)
+		if (syschat->buffers[i].server_id == (unsigned) target)
+			index = i;
+	if (index != -1)
+		buffers_switch(syschat, index);
 }
 
 char *buffers_active_name(t_syschat *syschat)

@@ -42,6 +42,9 @@ void	buffers_append(t_syschat *syschat, int index, const char *line);
 void	buffers_clear(t_syschat *syschat, int index);
 void	buffers_switch(t_syschat *syschat, int index);
 void	buffers_cycle(t_syschat *syschat, int step);
+/* Skipped over live connections only, in slot order; lands on the target
+** server's console window (Alt-Tab / Alt-Shift-Tab). */
+void	buffers_cycle_server(t_syschat *syschat, int step);
 char	*buffers_active_name(t_syschat *syschat);
 int		buffers_active_kind(t_syschat *syschat);
 int		buffers_unread_total(t_syschat *syschat);

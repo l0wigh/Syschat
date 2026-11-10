@@ -597,7 +597,6 @@ void commands_handle_cmd_list(t_syschat *syschat)
 		"close [#<channel>]               -> same as part",
 		"close <label>/<channel>          -> part a channel on another server",
 		"close <label>                    -> close a whole server connection",
-		"next [n] / prev [n]              -> go to next / previous buffer",
 		"list [motif]                     -> list the server channels in a buffer",
 		"switch [#<channel>|<label>/#<channel>] -> show the given buffer",
 		"privmsg <username>               -> send a message to a user",
@@ -606,7 +605,8 @@ void commands_handle_cmd_list(t_syschat *syschat)
 		"msg <target> <message>           -> send a message to a channel or a user",
 		"lock <name>                      -> same as switch (kept for compat)",
 		"?                                -> this list",
-		"Tab / Shift-Tab                  -> next / previous buffer",
+		"Tab / Shift-Tab, next|prev [n]  -> next / previous buffer",
+		"Alt-Tab / Alt-Shift-Tab          -> next / previous server",
 		NULL
 	};
 

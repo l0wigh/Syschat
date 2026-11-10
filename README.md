@@ -87,7 +87,12 @@ Every channel, and every private conversation, gets its own buffer. The top
 line shows the buffers: the active one is highlighted, the ones with unread
 messages are marked with a `*`.
 
-- `Tab` / `Shift-Tab` : next / previous buffer
+- `Tab` / `Shift-Tab` : next / previous buffer (current server only)
+- `Alt-Tab` / `Alt-Shift-Tab` : next / previous **server**
+- `Ctrl-Tab` / `Ctrl-Shift-Tab` : same, but only on terminals that report it
+  separately (kitty keyboard protocol, xterm `modifyOtherKeys`); a plain
+  terminal sends the same byte for `Ctrl-Tab` and `Tab`, so use `Alt-Tab`
+  there
 - `/next [n]` / `/prev [n]` : same thing from the command line
 - `/switch #channel` : jump straight to a buffer (`/lock` still works, as an alias)
 - `/close [#channel]` : leave and close a buffer
