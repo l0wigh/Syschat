@@ -16,7 +16,7 @@ Syschat: IRC client in C (C11) built on libc and raw syscalls (poll, sockets, te
 
 ## Test
 - Full offline suite: `tests/run_all.sh` (builds release + debug first).
-- Single test: `./build.sh && python3 tests/<name>.py [binary]`. Tests are functional: mock IRC server + pty, or local TLS server. No unit framework except `tests/wrap_unit.c`.
+- Single test: `./build.sh && python3 tests/<name>.py [binary]`. Tests are functional: mock IRC server + pty, or local TLS server. No unit framework except `tests/wrap_unit.c` and `tests/prompt_wrap_unit.c` (they include `screen.c` and fake the terminal).
 - Real network test: `SYSCHAT_NET_TESTS=1 python3 tests/network_smoke.py`. Opt-in only. Never run it by default; it connects to a public network.
 - Baseline on `ai`: all offline tests must pass before a PR. Report the actual output, not a summary.
 

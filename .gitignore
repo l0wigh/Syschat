@@ -6,4 +6,5 @@ objs/
 core
 core.*
 tests/wrap_unit
+tests/prompt_wrap_unit
 build/

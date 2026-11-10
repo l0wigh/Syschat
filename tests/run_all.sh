@@ -32,6 +32,9 @@ python3 tests/functional_list.py
 echo "--- functional_input ---"
 python3 tests/functional_input.py
 
+echo "--- functional_prompt_wrap ---"
+python3 tests/functional_prompt_wrap.py
+
 echo "--- functional_colors ---"
 python3 tests/functional_colors.py
 
@@ -53,6 +56,12 @@ python3 tests/tls_handshake.py
 echo "--- wrap_unit ---"
 ${CC:-gcc} -std=c11 -Wall -Wextra -Werror -I. -o tests/wrap_unit tests/wrap_unit.c
 ./tests/wrap_unit
+
+# The prompt of screen_draw(): faked terminal size, stdout redirected to a
+# file, so the frame itself is read back and measured instead of eyeballed.
+echo "--- prompt_wrap_unit ---"
+${CC:-gcc} -std=c11 -Wall -Wextra -Werror -I. -o tests/prompt_wrap_unit tests/prompt_wrap_unit.c
+./tests/prompt_wrap_unit
 
 if [ "${SYSCHAT_NET_TESTS:-0}" = "1" ]; then
 	echo "--- network_smoke (real network) ---"

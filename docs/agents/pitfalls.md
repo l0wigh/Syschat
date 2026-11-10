@@ -7,3 +7,4 @@
 - **Raw mode before connect**: a fatal error during connect must restore the terminal (`syschat_terminal_restore`), or the user's shell is left with echo off.
 - **Write drops** are reported in red in the active buffer (no silent `-1`). Keep that behaviour when touching `tls_send`/`net_send`.
 - **Incoming lines are capped at 511 bytes**; `BF_SIZE` is 512. Wrapping is only exercised on narrow terminals (see `tests/wrap_unit.c`).
+- **The frame is exactly `screen_height()` rows**: two bars, `room` message rows, the prompt. The prompt grows with the input (`prompt_wrap`) and takes its height out of `room`, so `room = rows - 2 - buffer_rows - (prompt_rows - 1)`. Adding a row anywhere without adjusting `room` scrolls the terminal on every redraw; `tests/prompt_wrap_unit.c` asserts the height.
