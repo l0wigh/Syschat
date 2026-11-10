@@ -66,7 +66,17 @@ static void	pass_signal(int sig)
 	_exit(128 + sig);
 }
 
-static void	syschat_ask_password(char *dst, size_t size, const char *prompt)
+/*
+** Returns 0 on success, 1 when nothing was typed (empty line or end of
+** input) and -1 when the value does not fit. A truncated password would fail
+** to authenticate with a message that blames the server, so an oversized one
+** is refused instead of being silently shortened.
+*/
+#define PASS_READ_OK 0
+#define PASS_READ_EMPTY 1
+#define PASS_READ_TOO_LONG -1
+
+static int	syschat_ask_password(char *dst, size_t size, const char *prompt)
 {
 	static const int	sigs[] = { SIGINT, SIGTERM, SIGHUP, SIGQUIT };
 	struct sigaction	sa;
@@ -127,8 +137,10 @@ static void	syschat_ask_password(char *dst, size_t size, const char *prompt)
 		sigaction(sigs[i], &old[i], NULL);
 	(void) write(STDOUT_FILENO, "\n", 1);
 	if (too_long)
-		fprintf(stderr, "syschat: password longer than %d characters, truncated\n",
-			SYSCHAT_PASS_LEN - 1);
+		return (PASS_READ_TOO_LONG);
+	if (dst[0] == '\0')
+		return (PASS_READ_EMPTY);
+	return (PASS_READ_OK);
 }
 static char input[SYSCHAT_LINE_LEN];
 static int input_len = 0;
@@ -877,9 +889,20 @@ int main(int argc, char **argv)
 	*/
 	if (policy_pass)
 	{
+		int		status;
 		int		i;
 
-		syschat_ask_password(policy_password, sizeof(policy_password), "Password: ");
+		status = syschat_ask_password(policy_password, sizeof(policy_password),
+				"Password: ");
+		/* A shortened password fails to authenticate and blames the
+		** server: refuse at startup instead, with a message of our own. */
+		if (status == PASS_READ_TOO_LONG)
+			error_exit(NULL, 12);
+		/* --pass without a password is a configuration mistake: say it
+		** loudly, then keep the historic "PASS none" behaviour. */
+		if (status == PASS_READ_EMPTY)
+			fprintf(stderr, "syschat: warning: --pass given but no password was read "
+				"(empty line or end of input); sending PASS none\n");
 		for (i = 0; i != syschat.conn_count; i++)
 			if (syschat.conns[i].alive)
 				syschat_apply_pass_policy(&syschat.conns[i]);

@@ -49,6 +49,10 @@ void error_print(int err)
 		case 11:
 			fprintf(stderr, "--no-tls and --tls-required contradict each other, pick one.");
 			break;
+		case 12:
+			fprintf(stderr, "--pass: the password read on stdin is too long "
+				"(maximum %d characters).", SYSCHAT_PASS_LEN - 1);
+			break;
 		default:
 			fprintf(stderr, "unknown error.");
 	}
