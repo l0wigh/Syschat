@@ -1,6 +1,8 @@
 #include "screen.h"
 #include "buffers.h"
 
+#include <stdarg.h>
+
 #define TAB_ACTIVE "\033[1;36m"
 #define TAB_UNREAD "\033[1;33m"
 #define TAB_IDLE "\033[0;37m"
@@ -61,39 +63,45 @@ int	screen_text_width(const char *s)
 }
 
 /*
-** Copy at most `width` *visible* characters, keeping ANSI sequences intact.
-** Counts characters, not bytes: one 'é' is one column, and a multi-byte
-** character is copied whole or not at all, never split in half.
+** Append a formatted fragment to the frame, clamped: `used` never leaves
+** [0, size - 1], so the `size - used` every other write trusts cannot
+** underflow. A frame that would not fit is cut at the end instead of
+** running past the allocation.
 */
-static void	append_clipped(char *dst, size_t dstsz, const char *src, int width)
+static void	out_add(char *out, size_t size, size_t *used, const char *fmt, ...)
 {
-	size_t	used;
-	size_t	len;
-	int		visible;
+	va_list	ap;
+	int		written;
 
-	used = 0;
-	visible = 0;
-	while (*src && visible < width)
+	if (*used >= size - 1)
+		return ;
+	va_start(ap, fmt);
+	written = vsnprintf(out + *used, size - *used, fmt, ap);
+	va_end(ap);
+	if (written < 0)
+		return ;
+	*used += (size_t)written;
+	if (*used > size - 1)
+		*used = size - 1;
+}
+
+/*
+** A wrapped continuation row can start with the colour of the prefix (a
+** reset, in practice) before its two-space indent. Callers that replace the
+** indent -- the ".." marker of a truncated view -- must skip both.
+*/
+static const char	*continuation_body(const char *row)
+{
+	while (*row == '\033')
 	{
-		if (*src == '\033')
-		{
-			while (*src && used + 2 < dstsz)
-			{
-				dst[used++] = *src;
-				if (*src++ == 'm')
-					break ;
-			}
-			continue ;
-		}
-		len = utf8_len(src);
-		if (used + len + 1 >= dstsz)
-			break ;
-		memcpy(dst + used, src, len);
-		used += len;
-		src += len;
-		visible++;
+		while (*row && *row != 'm')
+			row++;
+		if (*row)
+			row++;
 	}
-	dst[used] = '\0';
+	if (row[0] == ' ' && row[1] == ' ')
+		return (row + 2);
+	return (row);
 }
 
 /*
@@ -361,6 +369,40 @@ static int	wrap_line(const char *src, int width, char ***out)
 	return (count);
 }
 
+/*
+** The prompt is wrapped like a channel line: the prefix starts the line, so
+** the first row carries it and every continuation row is indented by
+** wrap_line() exactly like a wrapped message. That is what keeps the text
+** being typed readable once it reaches the right edge, instead of vanishing.
+** The caller decides how many rows the screen can hold.
+*/
+static int	prompt_wrap(t_syschat *syschat, const char *input, int cols,
+	char ***out)
+{
+	const char	*nick;
+	char		*line;
+	size_t		need;
+	int			count;
+
+	*out = NULL;
+	nick = SYSC(syschat)->nickname ? SYSC(syschat)->nickname : "";
+	need = strlen(nick) + strlen(input ? input : "") + 96;
+	if (syschat->active >= 0 && syschat->active < syschat->buffer_count)
+		need += strlen(syschat->buffers[syschat->active].name);
+	line = malloc(need);
+	if (!line)
+		return (0);
+	if (syschat->active >= 0 && syschat->active < syschat->buffer_count)
+		snprintf(line, need, "\033[90m[%s]\033[0m \033[1;36m<%s>\033[0m %s",
+			syschat->buffers[syschat->active].name, nick,
+			input ? input : "");
+	else
+		snprintf(line, need, "> %s", input ? input : "");
+	count = wrap_line(line, cols - 1, out);
+	free(line);
+	return (count);
+}
+
 void	screen_setup(t_syschat *syschat)
 {
 	(void) syschat;
@@ -377,30 +419,44 @@ void	screen_message(const char *text)
 void	screen_draw(t_syschat *syschat, const char *input)
 {
 	char	*out;
-	char	clip[SYSCHAT_LINE_LEN + 64];
 	size_t	size;
 	size_t	used;
+	size_t	written;
 	char	**rows;
+	char	**prows;
+	int		pcount;
+	int		prompt_rows;
+	int		prompt_max;
+	int		first;
 	int		nrows;
 	int		top_cut;
 	int		rows_count;
 	int		cols;
 	int		room;
-	int			index;
-	int			nchips;
-	int			buffer_rows;
-	char		right[32];
-	t_chip		chips[SYSCHAT_MAX_BUFFERS];
+	int		index;
+	int		nchips;
+	int		buffer_rows;
+	char	right[32];
+	t_chip	chips[SYSCHAT_MAX_BUFFERS];
 	t_buffer	*buffer;
 
 	rows_count = screen_height();
 	cols = screen_width();
-	size = (size_t)(cols + 128) * (size_t)(rows_count + 4) + 1024;
+	/*
+	** One row of the frame is at most 4 * cols + 256 bytes: a wrapped row is
+	** bounded by wrap_line()'s own storage (4 bytes per visible column, plus
+	** the ANSI it re-emits), and a bar stops at `cols` visible columns. The
+	** frame never holds more than rows_count rows -- two bars, the messages,
+	** the prompt -- because the prompt takes its height out of `room`. That
+	** bound is what keeps every `size - used` below honest: a multi-byte,
+	** ANSI-heavy or wrapped row cannot be larger than one row budget.
+	*/
+	size = (size_t)(rows_count + 2) * (size_t)(4 * cols + 256) + 1024;
 	out = calloc(size, sizeof(char));
 	if (!out)
 		return ;
 	used = 0;
-	used += snprintf(out + used, size - used, "\033[H");
+	out_add(out, size, &used, "\033[H");
 	/*
 	** Two bars: servers on top, then the buffers of the current server. The
 	** bottom bar is skipped when the current server has none (its console is
@@ -410,22 +466,43 @@ void	screen_draw(t_syschat *syschat, const char *input)
 	if (nchips)
 	{
 		snprintf(right, sizeof(right), "%d/%d srv", nchips, SYSCHAT_MAX_SERVERS);
-		used += chips_bar(chips, nchips, right, out + used, size - used, cols);
+		written = chips_bar(chips, nchips, right, out + used, size - used, cols);
+		used = written < size - used ? used + written : size - 1;
 	}
 	else
-		used += snprintf(out + used, size - used, "%s-- no server --%s",
-			TAB_IDLE, RESET);
-	used += snprintf(out + used, size - used, "\033[K\r\n");
+		out_add(out, size, &used, "%s-- no server --%s", TAB_IDLE, RESET);
+	out_add(out, size, &used, "\033[K\r\n");
 	buffer_rows = 0;
 	nchips = buffer_chips(syschat, chips);
 	if (nchips)
 	{
 		snprintf(right, sizeof(right), "%d buf%s", nchips, nchips > 1 ? "s" : "");
-		used += chips_bar(chips, nchips, right, out + used, size - used, cols);
-		used += snprintf(out + used, size - used, "\033[K\r\n");
+		written = chips_bar(chips, nchips, right, out + used, size - used, cols);
+		used = written < size - used ? used + written : size - 1;
+		out_add(out, size, &used, "\033[K\r\n");
 		buffer_rows = 1;
 	}
-	room = rows_count - 2 - buffer_rows;
+	/*
+	** The prompt is the last block and grows downwards: one more row each
+	** time the input reaches the right edge, which is why `room` is computed
+	** from its height instead of the other way round. It is capped so the
+	** frame can never scroll -- the bar(s) and at least one message row
+	** always survive, and the prompt never eats more than half the terminal.
+	** When it is capped the FIRST rows go: the cursor and the text being
+	** typed right now are at the end, that is what must stay visible.
+	*/
+	pcount = prompt_wrap(syschat, input, cols, &prows);
+	if (!prows)
+		pcount = 1;
+	prompt_max = rows_count - 2 - buffer_rows;
+	if (prompt_max > rows_count / 2)
+		prompt_max = rows_count / 2;
+	if (prompt_max < 1)
+		prompt_max = 1;
+	prompt_rows = pcount < prompt_max ? pcount : prompt_max;
+	if (prompt_rows < 1)
+		prompt_rows = 1;
+	room = rows_count - 2 - buffer_rows - (prompt_rows - 1);
 	if (room < 0)
 		room = 0;
 	index = syschat->active;
@@ -465,62 +542,67 @@ void	screen_draw(t_syschat *syschat, const char *input)
 			/* The marker replaces the continuation indent, so the row keeps
 			** exactly the width it was wrapped for. */
 			if (top_cut && i == nrows - 1)
-				used += snprintf(out + used, size - used,
-						"\033[90m..\033[0m%s\033[K\r\n",
-						rows[i] + (strncmp(rows[i], "  ", 2) == 0 ? 2 : 0));
+				out_add(out, size, &used, "\033[90m..\033[0m%s\033[K\r\n",
+					continuation_body(rows[i]));
 			else
-				used += snprintf(out + used, size - used, "%s\033[K\r\n", rows[i]);
+				out_add(out, size, &used, "%s\033[K\r\n", rows[i]);
 			free(rows[i]);
 		}
 		free(rows);
 		for (int i = nrows; i < room; i++)
-			used += snprintf(out + used, size - used, "\033[K\r\n");
+			out_add(out, size, &used, "\033[K\r\n");
 	}
-	else if (syschat->buffer_count == 0)
+	else if (syschat->buffer_count == 0 && room > 0)
 	{
 		/* Started with no argument: say what to do, then whatever the last
 		** commands answered. They cannot go into a buffer (there is none). */
 		int	line;
+		int	top;
 
-		used += snprintf(out + used, size - used,
+		out_add(out, size, &used,
 			"\033[0;37mNo server yet. /connect <nick> <server> <host> [port] to open one, "
-			"/? for help.\033[0m\033[K\r\n");
-		int	first;
-
+				"/? for help.\033[0m\033[K\r\n");
 		line = 1;
 		/* The ring is right aligned: the oldest entry sits at
 		** SYSCHAT_STATUS_LINES - status_count, not at 0. When the ring holds
 		** more lines than the window, keep the NEWEST ones: the last answer
 		** is the one the user is waiting for. */
-		first = SYSCHAT_STATUS_LINES - syschat->status_count;
-		if (SYSCHAT_STATUS_LINES - first > room - 1)
-			first = SYSCHAT_STATUS_LINES - (room - 1);
-		for (int i = first; i != SYSCHAT_STATUS_LINES && line < room; i++, line++)
-			used += snprintf(out + used, size - used, "%s\033[K\r\n",
+		top = SYSCHAT_STATUS_LINES - syschat->status_count;
+		if (SYSCHAT_STATUS_LINES - top > room - 1)
+			top = SYSCHAT_STATUS_LINES - (room - 1);
+		for (int i = top; i != SYSCHAT_STATUS_LINES && line < room; i++, line++)
+			out_add(out, size, &used, "%s\033[K\r\n",
 				syschat->status[i] ? syschat->status[i] : "");
 		for (; line < room; line++)
-			used += snprintf(out + used, size - used, "\033[K\r\n");
+			out_add(out, size, &used, "\033[K\r\n");
 	}
 	else
 		for (int i = 0; i != room; i++)
-			used += snprintf(out + used, size - used, "\033[K\r\n");
-	if (syschat->active >= 0 && syschat->active < syschat->buffer_count)
+			out_add(out, size, &used, "\033[K\r\n");
+	/* The prompt rows are the tail of the wrapped line, so the last one holds
+	** the cursor and no newline follows it: the frame stays exactly
+	** rows_count rows tall and never scrolls itself. */
+	first = pcount - prompt_rows;
+	if (first < 0)
+		first = 0;
+	for (int i = first; i != pcount; i++)
 	{
-		const char	*name = syschat->buffers[syschat->active].name;
-		const char	*nick = SYSC(syschat)->nickname ? SYSC(syschat)->nickname : "";
-		/* "[#chan] " is strlen+3 visible, "<nick> " is strlen+4. */
-		int			plen = (int)(strlen(name) + strlen(nick)) + 7;
-
-		used += snprintf(out + used, size - used,
-				"\033[K\033[90m[%s]\033[0m \033[1;36m<%s>\033[0m ", name, nick);
-		append_clipped(clip, sizeof(clip), input ? input : "", cols - plen);
+		if (i == first && first > 0)
+			out_add(out, size, &used, "\033[90m..\033[0m%s",
+				continuation_body(prows[i]));
+		else
+			out_add(out, size, &used, "%s", prows ? prows[i] : "");
+		if (i + 1 != pcount)
+			out_add(out, size, &used, "\033[K\r\n");
+		else
+			out_add(out, size, &used, "\033[K");
 	}
-	else
+	if (prows)
 	{
-		used += snprintf(out + used, size - used, "\033[K> ");
-		append_clipped(clip, sizeof(clip), input ? input : "", cols - 2);
+		for (int i = 0; i != pcount; i++)
+			free(prows[i]);
+		free(prows);
 	}
-	used += snprintf(out + used, size - used, "%s\033[K", clip);
 	write(1, out, used);
 	free(out);
 }
