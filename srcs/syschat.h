@@ -179,9 +179,17 @@ typedef struct s_syschat
 #define SYSC(s) (&(s)->conns[(s)->current])
 
 void	syschat_apply_tls_policy(t_conn *conn);
-void	syschat_apply_pass_policy(t_conn *conn);
-/* Wipe the process wide password; called from error_cleaning(). */
-void	syschat_pass_policy_clear(void);
+/*
+** Password prompt result codes. SYSCHAT_PASS_OK stores the value in
+** conn->password (one-shot: syschat_say_hello() wipes it after sending).
+** CANCELLED only happens inside the TUI (Ctrl-C).
+*/
+#define SYSCHAT_PASS_OK 0
+#define SYSCHAT_PASS_EMPTY 1
+#define SYSCHAT_PASS_TOO_LONG 2
+#define SYSCHAT_PASS_CANCELLED 3
+int		syschat_prompt_password(t_conn *conn, const char *prompt);
+void	syschat_conn_forget_password(t_conn *conn);
 /* 1 when `nick` matches one of the local /ignore masks. */
 int		syschat_is_ignored(t_syschat *syschat, const char *nick);
 int		syschat_conn_add(t_syschat *syschat, const char *label, const char *host,

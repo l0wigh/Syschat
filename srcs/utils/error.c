@@ -49,10 +49,6 @@ void error_print(int err)
 		case 11:
 			fprintf(stderr, "--no-tls and --tls-required contradict each other, pick one.");
 			break;
-		case 12:
-			fprintf(stderr, "--pass: the password read on stdin is too long "
-				"(maximum %d characters).", SYSCHAT_PASS_LEN - 1);
-			break;
 		default:
 			fprintf(stderr, "unknown error.");
 	}
@@ -63,12 +59,6 @@ void error_cleaning(t_syschat *syschat)
 {
 	t_conn	*conn;
 
-	/*
-	** The process wide password does not belong to a connection: wipe it on
-	** every fatal path, including the ones taken before any connection
-	** exists (syschat == NULL), where the early return below would hide it.
-	*/
-	syschat_pass_policy_clear();
 	if (!syschat)
 		return;
 	syschat_terminal_restore();
