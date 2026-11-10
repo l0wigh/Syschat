@@ -855,41 +855,65 @@ void commands_handle_list(t_syschat *syschat, char **parsed)
 	buffers_append(syschat, index, line);
 }
 
+/*
+** A help row is 78 columns at most: two cells of HELP_CELL, the first one
+** padded, so nothing wraps on an 80-column terminal.
+*/
+#define HELP_CELL 40
+
+/*
+** /? -- one row per command when it fits, two per row otherwise. The list
+** grows with every new command and this answer goes into the status ring,
+** which the empty frame only shows the tail of: at one row per command the
+** "Commands list" header had already scrolled out of a 24-line terminal. The
+** columns keep every entry verbatim, they only share rows.
+*/
 void commands_handle_cmd_list(t_syschat *syschat)
 {
 	static const char *help[] = {
-		"Commands list",
-		"-------------",
-		"exit                             -> Well... exit syschat",
-		"connect <nick> <server> <host> [port] -> open another server (port 6697 = TLS)",
-		"disconnect [label]               -> close a server connection",
-		"server [label]                   -> list servers, or show one server window",
-		"join #<channel>                  -> join the given channel",
-		"part [#<channel>]                -> leave a channel",
-		"close [#<channel>]               -> same as part",
-		"close <label>/<channel>          -> part a channel on another server",
-		"close <label>                    -> close a whole server connection",
-		"list [motif]                     -> list the server channels in a buffer",
-		"switch [#<channel>|<label>/#<channel>] -> show the given buffer",
-		"privmsg <username>               -> send a message to a user",
-		"whois <nickname>                 -> who is that user (311/319/330/671)",
-		"names [channel]                  -> list the nicknames of a channel",
-		"topic [#channel] [text]          -> read or set a channel topic",
-		"mode [target] [modes]            -> show or change modes",
-		"kick [#channel] <nick> [reason]  -> kick a user from a channel",
-		"nick <new nickname>              -> change your current nickname",
-		"clear                            -> clear the current buffer",
-		"msg <target> <message>           -> send a message to a channel or a user",
-		"me <text>                        -> action in the current channel or query",
-		"lock <name>                      -> same as switch (kept for compat)",
-		"?                                -> this list",
-		"Tab / Shift-Tab, next|prev [n]  -> next / previous buffer",
-		"Alt-Tab / Alt-Shift-Tab          -> next / previous server",
+		"exit -> leave syschat",
+		"connect <nick> <server> <host> [port] -> open another server",
+		"disconnect [label] -> close a server",
+		"server [label] -> list or show servers",
+		"join #<channel> -> join a channel",
+		"part [#<channel>] -> leave a channel",
+		"close [#<channel>] -> same as part",
+		"close <label>/<chan> -> another server",
+		"close <label> -> close a connection",
+		"list [motif] -> list server channels",
+		"switch [#<chan>|<label>/#<chan>] -> show a buffer",
+		"privmsg <nick> -> same as msg",
+		"whois <nick> -> who is that user",
+		"names [channel] -> list nicknames",
+		"topic [#chan] [text] -> read or set a topic",
+		"mode [target] [modes] -> show or set",
+		"kick [#chan] <nick> -> kick a user",
+		"nick <pseudo> -> change your nickname",
+		"clear -> clear the current buffer",
+		"msg <target> <text> -> send a message",
+		"me <text> -> action in channel or query",
+		"lock <name> -> same as switch",
+		"? -> this list",
+		"Tab / Shift-Tab, next|prev [n] -> cycle buffers",
+		"Alt-Tab / Alt-Shift-Tab -> cycle servers",
 		NULL
 	};
+	char	line[BF_SIZE];
+	size_t	left;
 
+	commands_say(syschat, "Commands list");
 	for (int i = 0; help[i]; i++)
-		commands_say(syschat, help[i]);
+	{
+		left = strlen(help[i]);
+		if (help[i + 1] && left < HELP_CELL && strlen(help[i + 1]) < HELP_CELL)
+		{
+			snprintf(line, sizeof(line), "%-*s%s", HELP_CELL - 1, help[i], help[i + 1]);
+			commands_say(syschat, line);
+			i++;
+		}
+		else
+			commands_say(syschat, help[i]);
+	}
 }
 
 void commands_handle_ctcp(t_syschat *syschat, char **parsed)
